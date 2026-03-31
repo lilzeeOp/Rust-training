@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "a-tcp-passthrough",
+    "b-http-load-balancer",
+    "c-tls-health-checks",
+    "d-http2-hyper",
+]
+resolver = "2"
