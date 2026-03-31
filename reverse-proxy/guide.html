@@ -1,0 +1,1498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reverse Proxy in Rust — A Complete Guide</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --accent-border: #bfdbfe;
+    --code-bg: #f8f9fa;
+    --code-border: #2563eb;
+    --terminal-bg: #0f172a;
+    --terminal-text: #e2e8f0;
+    --table-alt: #f8f9fa;
+    --border: #e5e7eb;
+    --nav-bg: #ffffffee;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 16px;
+  }
+
+  /* ---- NAV ---- */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--nav-bg);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  nav ul {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  nav ul li a {
+    display: block;
+    padding: 12px 10px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+  nav ul li a:hover { color: var(--accent); }
+
+  /* ---- LAYOUT ---- */
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  /* ---- HEADINGS ---- */
+  h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .subtitle {
+    font-size: 1.1rem;
+    color: var(--muted);
+    margin-bottom: 48px;
+    max-width: 640px;
+  }
+
+  h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 56px 0 20px;
+    padding-left: 16px;
+    border-left: 4px solid var(--accent);
+    line-height: 1.3;
+  }
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 32px 0 12px;
+  }
+  h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 24px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.8rem;
+  }
+
+  p { margin-bottom: 16px; }
+  ul, ol { margin: 0 0 16px 24px; }
+  li { margin-bottom: 6px; }
+
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- CODE ---- */
+  code {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New", monospace;
+    font-size: 0.87em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border-left: 3px solid var(--code-border);
+    border-radius: 6px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 20px 0;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    color: var(--text);
+  }
+
+  /* Terminal / output blocks */
+  pre.terminal {
+    background: var(--terminal-bg);
+    border-left: 3px solid #475569;
+  }
+  pre.terminal code {
+    color: var(--terminal-text);
+  }
+
+  /* ASCII art */
+  pre.ascii {
+    background: var(--code-bg);
+    border-left: 3px solid var(--accent);
+    color: var(--text);
+    font-size: 0.85rem;
+  }
+
+  /* ---- CALLOUT ---- */
+  .callout {
+    background: var(--accent-light);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 16px 20px;
+    margin: 24px 0;
+  }
+  .callout strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--accent);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .callout-warn {
+    background: #fff7ed;
+    border-left-color: #f97316;
+  }
+  .callout-warn strong { color: #c2410c; }
+
+  /* ---- TABLE ---- */
+  .table-wrap { overflow-x: auto; margin: 24px 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  th {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text);
+  }
+  td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: var(--table-alt); }
+
+  /* ---- SECTION DIVIDER ---- */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* ---- BADGE ---- */
+  .badge {
+    display: inline-block;
+    background: var(--accent-light);
+    color: var(--accent);
+    border: 1px solid var(--accent-border);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* ---- HERO ---- */
+  .hero {
+    background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+    border: 1px solid var(--accent-border);
+    border-radius: 12px;
+    padding: 36px 40px;
+    margin-bottom: 48px;
+  }
+  .hero h1 { margin-bottom: 12px; }
+
+  /* ---- OPTION HEADER ---- */
+  .option-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .option-label {
+    background: var(--accent);
+    color: white;
+    font-weight: 700;
+    font-size: 1.1rem;
+    border-radius: 8px;
+    padding: 6px 16px;
+    flex-shrink: 0;
+  }
+
+  /* ---- LIMITATION BOX ---- */
+  .limitation {
+    background: #fef2f2;
+    border-left: 4px solid #ef4444;
+    border-radius: 0 6px 6px 0;
+    padding: 16px 20px;
+    margin: 24px 0;
+  }
+  .limitation strong {
+    display: block;
+    color: #b91c1c;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    .container { padding: 24px 16px 64px; }
+    h1 { font-size: 1.8rem; }
+    h2 { font-size: 1.3rem; }
+    pre { padding: 14px 16px; font-size: 0.78rem; }
+    nav ul li a { font-size: 12px; padding: 10px 7px; }
+    .hero { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <ul>
+    <li><a href="#background">Background</a></li>
+    <li><a href="#what-is-reverse-proxy">Reverse Proxy</a></li>
+    <li><a href="#four-options">Four Options</a></li>
+    <li><a href="#option-a">Option A</a></li>
+    <li><a href="#option-b">Option B</a></li>
+    <li><a href="#option-c">Option C</a></li>
+    <li><a href="#option-d">Option D</a></li>
+    <li><a href="#glossary">Glossary</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+  <div class="hero">
+    <h1>Reverse Proxy in Rust</h1>
+    <p class="subtitle">A complete guide from TCP sockets to HTTP/2 — written for software engineers who are learning this for the first time.</p>
+    <p style="color: var(--muted); font-size:0.9rem;">This page walks through four real implementations, built in order from simplest to most production-ready. Every code snippet is taken directly from the source files.</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <h2 id="background">1. Background Concepts</h2>
+  <!-- ================================================================ -->
+
+  <p>Before we talk about reverse proxies, we need to make sure the foundations are solid. This section explains the five concepts that everything else builds on.</p>
+
+  <!-- ---- SERVER AND CLIENT ---- -->
+  <h3>What is a server and a client?</h3>
+
+  <p>A <strong>server</strong> is a program that waits. It opens a port, sits there, and accepts connections from anyone who calls. A <strong>client</strong> is a program that initiates. It reaches out to a server at a known address and says "I want to talk."</p>
+
+  <p>The simplest mental model: think of a server as a phone operator sitting at a desk with headphones on. The client is anyone who dials in. The operator never calls you — you always call them.</p>
+
+  <p>The "address" of a server is two things combined: an IP address (which machine) and a port number (which program on that machine). For example, <code>127.0.0.1:8080</code> means "my own machine, port 8080." The operating system routes incoming connections to the right program based on the port.</p>
+
+  <!-- ---- TCP ---- -->
+  <h3>What is a TCP connection?</h3>
+
+  <p>TCP is a pipe. When a client and server establish a TCP connection, they get a reliable, ordered, bidirectional stream of bytes. You can think of it as two garden hoses duct-taped together — bytes go in one end and come out the other end, in the same order, without gaps.</p>
+
+  <p>Before data flows, there is a "three-way handshake": the client sends SYN ("I want to connect"), the server replies SYN-ACK ("I accept"), the client replies ACK ("great"). After that, both sides can read and write freely. When they are done, either side can close the connection.</p>
+
+  <p>The important thing to understand: TCP knows nothing about HTTP, or JSON, or images, or anything with meaning. It only knows bytes. Any meaning is layered on top by higher-level protocols.</p>
+
+  <!-- ---- HTTP ---- -->
+  <h3>What is HTTP?</h3>
+
+  <p>HTTP (HyperText Transfer Protocol) is a text-based protocol that runs over TCP. It defines a request/response format — the client sends a request, the server sends a response, that's one round trip.</p>
+
+  <p>Here is what an actual HTTP request looks like as raw bytes on the wire:</p>
+
+<pre><code>GET /index.html HTTP/1.1\r\n
+Host: example.com\r\n
+Accept: text/html\r\n
+\r\n</code></pre>
+
+  <p>Breaking that down:</p>
+  <ul>
+    <li><strong>Line 1</strong> — the request line: method (<code>GET</code>), path (<code>/index.html</code>), version (<code>HTTP/1.1</code>).</li>
+    <li><strong>Lines 2–3</strong> — headers: each is a key-value pair separated by a colon.</li>
+    <li><strong>The blank line</strong> — a bare <code>\r\n\r\n</code> (carriage-return + newline, twice) signals the end of headers. The server stops reading headers here.</li>
+    <li>After the blank line, an optional body can follow (for POST requests, file uploads, etc).</li>
+  </ul>
+
+  <p>The server reads that, processes it, and sends back a response:</p>
+
+<pre><code>HTTP/1.1 200 OK\r\n
+Content-Type: text/html\r\n
+Content-Length: 13\r\n
+\r\n
+Hello, World!</code></pre>
+
+  <p>The response has a status line (version, code, reason), headers, a blank line, and then the body. The status code tells you what happened: <code>200</code> = success, <code>404</code> = not found, <code>502</code> = bad gateway, <code>503</code> = service unavailable.</p>
+
+  <p>That is the entire protocol at its core. HTTP/1.1 is literally this text format going back and forth over a TCP connection.</p>
+
+  <!-- ---- HTTPS / TLS ---- -->
+  <h3>What is HTTPS and TLS?</h3>
+
+  <p>The problem with plain HTTP is that anyone who can see your network traffic (your ISP, someone on the same Wi-Fi, a compromised router) can read every request and response. Passwords, tokens, session cookies — all visible.</p>
+
+  <p><strong>TLS</strong> (Transport Layer Security) solves this by encrypting the bytes before they go on the wire. HTTPS is just HTTP running over a TLS-encrypted TCP connection instead of a plain TCP connection.</p>
+
+  <p>When a TLS connection starts, there is a <strong>handshake</strong> before any application data flows:</p>
+
+  <ol>
+    <li><strong>Client Hello</strong> — the client says hello, lists the cipher suites it supports (the encryption algorithms it knows), and picks a random number for key generation.</li>
+    <li><strong>Server Hello + Certificate</strong> — the server picks a cipher suite, sends its certificate (a file containing the server's public key plus a digital signature from a trusted authority proving who the server is), and contributes its own random number.</li>
+    <li><strong>Key exchange</strong> — both sides use the random numbers and the certificate's public key to derive a shared secret. This uses math (Diffie-Hellman or similar) where each side can compute the same number without ever sending that number over the wire.</li>
+    <li><strong>Finished</strong> — both sides confirm with a small encrypted message to prove they derived the same keys.</li>
+  </ol>
+
+  <p>After the handshake, all further bytes are encrypted with those shared keys. An observer can see that a connection happened and roughly how much data moved, but not the content.</p>
+
+  <p>A <strong>self-signed certificate</strong> is a certificate where you signed it yourself instead of having a trusted authority (like Let's Encrypt) sign it. Browsers will warn users about self-signed certs because the browser cannot verify who made them. But for development and internal tools, they are completely fine — the encryption still works, you just need to tell your HTTP client to accept the cert without verifying the signature (the <code>-k</code> flag in curl).</p>
+
+  <!-- ---- HTTP/2 ---- -->
+  <h3>What is HTTP/2 and why does it exist?</h3>
+
+  <p>HTTP/1.1 has a performance problem called <strong>head-of-line blocking</strong>. In HTTP/1.1, a single connection can only have one in-flight request at a time. If you want to load a web page that references 20 CSS files, 15 JavaScript files, and 40 images, your browser has to either make 75 sequential requests on one connection, or open many connections (browsers typically open 6 per domain). Both approaches are wasteful.</p>
+
+  <p><strong>HTTP/2</strong> solves this with <strong>multiplexing</strong>: many requests can be in flight simultaneously over a single connection. It does this by breaking messages into numbered <em>frames</em> and labeling each frame with a <em>stream ID</em>. The server can receive frames from stream 1, 4, 7 all at once, process them concurrently, and send back frames for each — interleaved however the network allows.</p>
+
+<pre class="ascii">HTTP/1.1 — one at a time:
+[Request 1] → [Response 1] → [Request 2] → [Response 2]
+
+HTTP/2 — multiplexed:
+[Req 1 frame] [Req 2 frame] [Req 3 frame]
+          ↓         ↓         ↓
+[Resp 1 frame] [Resp 3 frame] [Resp 2 frame]  (any order)</pre>
+
+  <p>HTTP/2 also compresses headers using a scheme called <strong>HPACK</strong>, which avoids sending the same headers (like <code>Accept-Encoding</code>, <code>Cookie</code>) over and over.</p>
+
+  <p>HTTP/2 requires TLS in practice (browsers only implement HTTP/2 over encrypted connections). This means the client and server need to agree on which protocol to use during the TLS handshake itself. They do this with an extension called <strong>ALPN</strong> (Application-Layer Protocol Negotiation).</p>
+
+  <p>During the TLS handshake, the client includes a list of protocols it supports, like <code>["h2", "http/1.1"]</code>. The server picks the best one it also supports and tells the client. By the time the handshake finishes, both sides already know if they are speaking HTTP/2 or HTTP/1.1 — no extra round trip needed.</p>
+
+  <!-- ---- ASYNC/AWAIT ---- -->
+  <h3>What is async/await in Rust?</h3>
+
+  <p>Imagine a web server that handles connections by assigning one OS thread per connection. Threads are fairly expensive — each one costs several megabytes of memory for its stack. If you have 10,000 simultaneous connections, you need 10,000 threads, which costs tens of gigabytes of RAM just for stacks. That is the "C10K problem" — how do you handle 10,000 concurrent connections without 10,000 threads?</p>
+
+  <p>The answer is <strong>async I/O</strong>. Instead of having the thread sit idle waiting for data to arrive on a socket, you register that socket with the operating system's event system (called <code>epoll</code> on Linux, <code>kqueue</code> on macOS, <code>IOCP</code> on Windows). When data arrives, the OS notifies you, and you process it. One thread can manage thousands of sockets this way.</p>
+
+  <p>In Rust, this is expressed through the <code>async/await</code> syntax. When you write:</p>
+
+<pre><code>let data = stream.read(&mut buf).await;</code></pre>
+
+  <p>The <code>.await</code> means: "start this read operation, but if no data is available yet, <em>yield control back</em> to the runtime so other tasks can run. Resume me when data is ready." The function does not block the thread — it pauses itself and lets something else run.</p>
+
+  <p>The thing that gets paused is called a <strong>Future</strong>. A Future is a value that represents an operation that has not completed yet. When you call <code>.await</code>, you hand that Future to the runtime and say "run me when this is done."</p>
+
+  <p><strong>Tokio</strong> is the runtime that makes this work. Tokio starts a thread pool (typically one thread per CPU core), and distributes Futures across those threads. When a Future is waiting for I/O, Tokio parks it. When the OS signals that the I/O is ready, Tokio wakes it up and puts it back on a thread to continue running.</p>
+
+  <p>When you call <code>tokio::spawn(async move { ... })</code>, you are creating a new <em>task</em> — a lightweight unit of work scheduled by Tokio. Tasks are much cheaper than OS threads. You can have hundreds of thousands of tasks on a handful of threads.</p>
+
+  <div class="callout">
+    <strong>How does this compare to Go goroutines?</strong>
+    Underneath, Go goroutines and Rust async tasks use the same OS primitives (epoll on Linux). Go goroutines are stackful coroutines — each goroutine gets a small growable stack. Rust Futures are stackless — they store only the state they need in a generated state machine struct. Rust Futures have no runtime overhead at all when not awaited. The tradeoff: Go's model is simpler to write, Rust's model is more explicit about what runs and when.
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="what-is-reverse-proxy">2. What is a Reverse Proxy?</h2>
+  <!-- ================================================================ -->
+
+  <h3>Forward proxy vs. reverse proxy</h3>
+
+  <p>A <strong>forward proxy</strong> sits in front of clients. Clients route their outbound traffic through it. The proxy makes requests on behalf of the clients. Companies use forward proxies to control what websites employees can visit, to cache content, or to anonymize traffic. The server being talked to may not even know a proxy is involved.</p>
+
+  <p>A <strong>reverse proxy</strong> sits in front of servers. Clients talk to the proxy, thinking it is the final server. The proxy forwards requests to the real server(s) behind it, and streams the response back. The client may not know (or care) that a proxy is involved.</p>
+
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th></th>
+        <th>Forward Proxy</th>
+        <th>Reverse Proxy</th>
+      </tr>
+      <tr>
+        <td><strong>Sits in front of</strong></td>
+        <td>Clients</td>
+        <td>Servers</td>
+      </tr>
+      <tr>
+        <td><strong>Who configures it</strong></td>
+        <td>The client (or client's org)</td>
+        <td>The server operator</td>
+      </tr>
+      <tr>
+        <td><strong>Client knows about it</strong></td>
+        <td>Usually yes</td>
+        <td>Usually no</td>
+      </tr>
+      <tr>
+        <td><strong>Common use</strong></td>
+        <td>Content filtering, caching, VPN-like</td>
+        <td>Load balancing, TLS termination, routing</td>
+      </tr>
+    </table>
+  </div>
+
+  <h3>The receptionist analogy</h3>
+
+  <p>Imagine you walk into a large company's lobby and say "I need to speak to someone about my account." The receptionist takes your request, figures out which department handles accounts, routes you to that person, and comes back with an answer. You never went directly to the account manager. You don't know their extension, which floor they are on, or whether they were out sick and someone else handled your request. The receptionist is the reverse proxy.</p>
+
+  <p>This is exactly what happens with a reverse proxy in production:</p>
+  <ul>
+    <li>Your browser sends a request to <code>api.example.com</code>.</li>
+    <li>DNS resolves to the reverse proxy's IP address.</li>
+    <li>The proxy receives the request, picks one of three backend servers, forwards the request.</li>
+    <li>The backend responds. The proxy streams that response back to your browser.</li>
+    <li>Your browser never knew there were three servers behind that one address.</li>
+  </ul>
+
+  <h3>Why companies use reverse proxies</h3>
+
+  <ul>
+    <li><strong>Load balancing</strong> — spread requests across multiple backend instances so no single server gets overwhelmed. If one backend crashes, the proxy stops sending it traffic.</li>
+    <li><strong>TLS termination</strong> — decrypt HTTPS once at the proxy, forward plain HTTP to backends on the internal network. Backends stay simple and don't need TLS configuration. The internal network is trusted.</li>
+    <li><strong>Health checking</strong> — the proxy periodically checks if backends are alive. Dead backends are automatically removed from rotation. Clients never see failures from a dead backend.</li>
+    <li><strong>Hiding backend topology</strong> — backends can be on internal IPs, any port, any number of machines. The outside world only sees one address. You can add, remove, and replace backends without any client configuration changes.</li>
+    <li><strong>Observability</strong> — inject headers like <code>X-Request-ID</code> to trace a request through logs across multiple services. Log every request with timing. Add <code>X-Forwarded-For</code> so backends see the real client IP even though the TCP connection came from the proxy.</li>
+  </ul>
+
+  <h3>Architecture</h3>
+
+<pre class="ascii">
+Internet
+   |
+   | HTTPS (port 443)
+   v
++------------------+
+| Reverse Proxy    |  TLS termination, health checks,
+|                  |  load balancing, header injection
++------------------+
+   |        |        |
+   |        |        | plain HTTP (internal network)
+   v        v        v
++------+ +------+ +------+
+| App  | | App  | | App  |
+| :9091| | :9092| | :9093|
++------+ +------+ +------+
+Backend 1  Backend 2  Backend 3</pre>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="four-options">3. The Four Options — Why We Built Them in This Order</h2>
+  <!-- ================================================================ -->
+
+  <p>Each option adds exactly one real production concern. The progression is not arbitrary — it mirrors how you would actually build a proxy in real life: start with the simplest possible thing that works, then add what you need when you need it.</p>
+
+  <div class="callout">
+    <strong>The design principle</strong>
+    Do not add complexity until you understand why you need it. Each option here breaks in a specific, concrete way. Understanding those limitations is more valuable than having a feature-complete proxy you don't understand.
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Option</th>
+        <th>What it does</th>
+        <th>New concept added</th>
+        <th>What it still can't do</th>
+      </tr>
+      <tr>
+        <td><span class="badge">A</span> TCP Passthrough</td>
+        <td>Forward raw bytes between client and one upstream</td>
+        <td>Async TCP, tokio::spawn, bidirectional copy</td>
+        <td>Load balance, read HTTP, HTTPS, add headers</td>
+      </tr>
+      <tr>
+        <td><span class="badge">B</span> HTTP/1.1 Load Balancer</td>
+        <td>Parse HTTP headers, rewrite them, round-robin across 3 upstreams</td>
+        <td>httparse, header injection, AtomicUsize counter</td>
+        <td>TLS, health checking, HTTP/2</td>
+      </tr>
+      <tr>
+        <td><span class="badge">C</span> HTTPS + Health Checks</td>
+        <td>TLS termination via rustls, health-aware round-robin with AtomicBool flags</td>
+        <td>TLS handshake, rcgen, health check loop, 503 responses</td>
+        <td>HTTP/2 multiplexing</td>
+      </tr>
+      <tr>
+        <td><span class="badge">D</span> HTTP/2 via hyper + ALPN</td>
+        <td>Full HTTP/2 multiplexing, typed requests/responses via hyper, ALPN negotiation</td>
+        <td>hyper Service trait, ALPN, http2::Builder, BoxBody</td>
+        <td>Nothing fundamental — this is a complete production proxy</td>
+      </tr>
+    </table>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="option-a">4. Option A — TCP Passthrough</h2>
+  <!-- ================================================================ -->
+
+  <div class="option-header">
+    <span class="option-label">A</span>
+    <p style="margin:0; color: var(--muted);">File: <code>a-tcp-passthrough/src/main.rs</code> and <code>src/proxy.rs</code></p>
+  </div>
+
+  <p>This is the simplest possible proxy. It does not know anything about HTTP. It does not read, parse, or modify the bytes in any way. It just opens a connection to one fixed upstream and copies bytes in both directions.</p>
+
+  <h3>Key concepts in main.rs</h3>
+
+  <h4>TcpListener::bind</h4>
+  <p>Binding to a port is how you tell the OS "I am the program that owns port 8080 on this machine." The OS will start delivering incoming TCP connections to you. If another program already has that port, bind fails. If you try to bind to a port below 1024 on Linux/macOS, you need root privileges.</p>
+
+<pre><code>let listener = tokio::net::TcpListener::bind(config.listen_socket_addr()).await?;</code></pre>
+
+  <p>The <code>.await</code> here just means "wait for the OS to confirm the bind succeeded" — this is fast and nearly synchronous, but everything in async Rust needs to be awaited.</p>
+
+  <h4>The accept loop</h4>
+  <p><code>listener.accept()</code> waits for the next client to connect. It returns the socket for that new connection and the client's address. This call yields — while waiting for a client, the Tokio runtime can run other tasks. When a client connects, this call resolves.</p>
+
+  <p>Notice the <code>tokio::select!</code> macro. It runs two futures simultaneously and takes whichever one resolves first:</p>
+  <ul>
+    <li>Branch 1: a new connection arrived</li>
+    <li>Branch 2: CTRL+C was pressed</li>
+  </ul>
+  <p>This is how graceful shutdown works — when you press CTRL+C, the loop exits, no more connections are accepted, and existing tasks run to completion.</p>
+
+  <h4>tokio::spawn</h4>
+  <p>Each connection is handled in its own <em>task</em> via <code>tokio::spawn(async move { ... })</code>. Without spawn, the accept loop would block while handling the first client, and the second client would wait. With spawn, each client gets its own task that runs concurrently. Tokio schedules all tasks across a thread pool.</p>
+
+  <p>The <code>move</code> keyword means the closure takes ownership of the variables it uses (<code>client</code>, <code>config</code>, <code>active</code>). This is Rust's way of saying "this task owns its data, no sharing problems."</p>
+
+  <h4>tokio::io::copy_bidirectional</h4>
+  <p>This function does the actual work: it reads bytes from <code>client</code> and writes them to <code>upstream</code>, and simultaneously reads bytes from <code>upstream</code> and writes them to <code>client</code>. It does this concurrently — it does not wait for one direction to finish before starting the other. It returns when either side closes the connection.</p>
+
+  <p>Because this is pure byte copying, it works for any protocol — HTTP, HTTPS, WebSockets, custom binary protocols. It doesn't care what the bytes mean.</p>
+
+  <h4>AtomicUsize for the active connection counter</h4>
+  <p>We want to count active connections and print it in the log. The counter is shared across many tasks. We could use a <code>Mutex&lt;usize&gt;</code>, but that would require locking and unlocking. Instead, we use <code>AtomicUsize</code> — an integer that can be incremented and decremented safely from multiple threads at the same time without any locking. The CPU provides hardware instructions for this. Atomics are the right tool when you just need a counter.</p>
+
+  <h3>The full source code</h3>
+
+<pre><code>//! Level 3 — Production grade TCP passthrough.
+//!
+//! Adds: connect/transfer timeouts, graceful CTRL+C shutdown,
+//! active connection counter, structured logging with env-filter.
+
+mod config;
+mod proxy;
+
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+
+use anyhow::{Context, Result};
+use tracing::{error, info};
+
+/// Resolves when CTRL+C is received.
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install CTRL+C signal handler");
+}
+
+#[tokio::main]
+async fn main() -> Result&lt;()&gt; {
+    // env-filter reads RUST_LOG at startup.
+    // Example: RUST_LOG=a_tcp_passthrough=debug cargo run
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("a_tcp_passthrough=info".parse().unwrap()),
+        )
+        .init();
+
+    let config = Arc::new(
+        config::Config::load("config.toml").context("failed to load config.toml")?,
+    );
+
+    let listener = tokio::net::TcpListener::bind(config.listen_socket_addr())
+        .await
+        .with_context(|| format!("failed to bind to {}", config.listen_addr))?;
+
+    info!(addr = %config.listen_addr, "proxy listening");
+
+    // Shared atomic counter — no Mutex needed for a simple increment/decrement.
+    // Arc lets us clone a reference cheaply into each spawned task.
+    let active = Arc::new(AtomicUsize::new(0));
+
+    loop {
+        tokio::select! {
+            // Branch 1: a new client connection arrived.
+            result = listener.accept() =&gt; {
+                let (client, addr) = result.context("failed to accept connection")?;
+                let config = Arc::clone(&amp;config);
+                let active = Arc::clone(&amp;active);
+
+                // Increment before spawn so the count is accurate immediately.
+                let count = active.fetch_add(1, Ordering::Relaxed) + 1;
+                info!(client = %addr, active = count, "[NEW] connection");
+
+                tokio::spawn(async move {
+                    if let Err(e) = proxy::handle_connection(client, config).await {
+                        error!(client = %addr, error = %e, "connection error");
+                    }
+                    // fetch_sub returns the value BEFORE subtracting, so subtract 1 for current.
+                    let count = active.fetch_sub(1, Ordering::Relaxed) - 1;
+                    info!(client = %addr, active = count, "[DONE] connection");
+                });
+            }
+
+            // Branch 2: CTRL+C received — stop accepting, let existing tasks finish.
+            _ = shutdown_signal() =&gt; {
+                info!("shutdown signal received — stopping");
+                break;
+            }
+        }
+    }
+
+    info!("proxy stopped");
+    Ok(())
+}</code></pre>
+
+  <h3>Understanding the logs</h3>
+
+  <p>When you start the proxy:</p>
+<pre class="terminal"><code>INFO a_tcp_passthrough: proxy listening addr=127.0.0.1:8080</code></pre>
+
+  <ul>
+    <li><code>INFO</code> — log level. This is informational. <code>WARN</code> would indicate something unexpected but recoverable, <code>ERROR</code> is a serious problem.</li>
+    <li><code>a_tcp_passthrough</code> — the module/crate name. Rust's logging system lets you filter by module.</li>
+    <li><code>proxy listening</code> — the log message.</li>
+    <li><code>addr=127.0.0.1:8080</code> — structured key-value field added to the log. The <code>%</code> prefix means "use the Display implementation of this value."</li>
+  </ul>
+
+  <p>When a client connects:</p>
+<pre class="terminal"><code>INFO a_tcp_passthrough: [NEW] connection client=127.0.0.1:54321 upstream=127.0.0.1:9090
+INFO a_tcp_passthrough: [CLOSED] connection client=127.0.0.1:54321</code></pre>
+
+  <ul>
+    <li><code>client=127.0.0.1:54321</code> — the client's IP and ephemeral port. The OS assigns the ephemeral port automatically when the client makes a connection. That is why it is a high number (above 32768).</li>
+    <li><code>[NEW]</code> / <code>[CLOSED]</code> — we print these at the start and end of each connection so you can see how long connections live and how many are active at once.</li>
+  </ul>
+
+  <p>When you send a request:</p>
+<pre class="terminal"><code>$ curl http://localhost:8080/
+Hello from backend!</code></pre>
+
+  <p>curl opens a TCP connection to port 8080. The proxy connects to port 9090 (your backend). The bytes of the HTTP request flow from curl through the proxy to the backend. The backend's response bytes flow back through the proxy to curl. The proxy never sees or cares that those bytes are HTTP.</p>
+
+  <div class="limitation">
+    <strong>Limitations of Option A</strong>
+    <ul>
+      <li><strong>Breaks with HTTPS</strong> — TLS bytes are encrypted. The proxy would try to connect to an upstream and forward encrypted bytes. The upstream would see garbage because it does not know about the TLS session that was negotiated between the client and the proxy. You cannot forward TLS traffic to a plain HTTP backend without terminating TLS first.</li>
+      <li><strong>Cannot load balance</strong> — there is only one fixed upstream in the config. To load balance, you need to read the HTTP request to at least know when one request ends and the next begins. At the raw TCP level, you can't tell.</li>
+      <li><strong>Cannot add headers</strong> — we never look at the bytes, so we cannot inject <code>X-Forwarded-For</code> or any other header. The backend never knows the real client IP.</li>
+    </ul>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="option-b">5. Option B — HTTP/1.1 Load Balancer</h2>
+  <!-- ================================================================ -->
+
+  <div class="option-header">
+    <span class="option-label">B</span>
+    <p style="margin:0; color: var(--muted);">Files: <code>src/main.rs</code>, <code>src/proxy.rs</code>, <code>src/http.rs</code>, <code>src/balancer.rs</code></p>
+  </div>
+
+  <p>Option B reads and parses the HTTP request headers, rewrites them with injected proxy headers, and distributes requests across multiple backends using round-robin. This is the core of what a real HTTP reverse proxy does.</p>
+
+  <h3>httparse — parsing raw HTTP bytes</h3>
+
+  <p><code>httparse</code> is a zero-copy HTTP parser. You give it a byte slice and it tells you: the method (<code>GET</code>, <code>POST</code>, etc.), the path (<code>/api/users</code>), the HTTP version, and a list of headers (each a name and value). It does this without allocating memory — it just records the offsets into your existing buffer.</p>
+
+  <p>We use it in <code>http.rs</code> inside <code>build_forwarded_request</code>:</p>
+
+<pre><code>let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
+let mut req = httparse::Request::new(&amp;mut headers);
+let status = req.parse(&amp;buf[..len]).context("failed to parse HTTP request")?;
+if status.is_partial() {
+    bail!("incomplete HTTP headers");
+}
+let method = req.method.context("missing HTTP method")?.to_string();
+let path = req.path.context("missing HTTP path")?.to_string();</code></pre>
+
+  <p>After parsing, <code>req.method</code>, <code>req.path</code>, and <code>req.headers</code> contain the parsed values as slices pointing into your original buffer. No copying until you explicitly call <code>.to_string()</code>.</p>
+
+  <h3>Why we strip and re-inject certain headers</h3>
+
+  <p>When the proxy forwards a request to the backend, it rewrites the headers. Some headers must be stripped from the client's original request and replaced with the proxy's own values:</p>
+
+  <ul>
+    <li><strong>Host</strong> — the client sends <code>Host: example.com</code>, but the backend should see <code>Host: 127.0.0.1:9091</code> (the upstream it is actually talking to). If we forwarded the original Host header, the backend might be confused about who it is serving.</li>
+    <li><strong>X-Forwarded-For</strong> — if a malicious client sends <code>X-Forwarded-For: 1.2.3.4</code>, and we blindly forward it, the backend thinks the real client is <code>1.2.3.4</code>. We strip the client's version and inject our own, which contains the real client IP as seen by the proxy. This is called anti-spoofing.</li>
+    <li><strong>Connection</strong> — HTTP keep-alive semantics between client and proxy are separate from keep-alive between proxy and upstream. We always send <code>Connection: close</code> to the upstream to keep things simple.</li>
+    <li><strong>Via</strong> — RFC standard for marking that a request passed through a proxy. We inject <code>Via: 1.1 rust-proxy</code>.</li>
+    <li><strong>X-Request-ID</strong> — same anti-spoofing reason as X-Forwarded-For. We generate a fresh UUID for every request.</li>
+  </ul>
+
+  <h3>The full build_forwarded_request function</h3>
+
+<pre><code>use anyhow::{bail, Context, Result};
+
+const MAX_HEADERS: usize = 64;
+
+/// Parses an HTTP/1.x request header block and rebuilds it for proxy forwarding.
+///
+/// Injected headers (X-Forwarded-For, X-Request-ID, Via, Connection) are added
+/// fresh from our values. Any client-supplied versions of these headers are stripped
+/// to prevent spoofing.
+///
+/// Returns `(rewritten_header_bytes, method, path)`.
+pub fn build_forwarded_request(
+    buf: &amp;[u8],
+    len: usize,
+    client_ip: &amp;str,
+    upstream_host: &amp;str,
+    request_id: &amp;str,
+) -&gt; Result&lt;(Vec&lt;u8&gt;, String, String)&gt; {
+    let mut headers = [httparse::EMPTY_HEADER; MAX_HEADERS];
+    let mut req = httparse::Request::new(&amp;mut headers);
+
+    let status = req.parse(&amp;buf[..len]).context("failed to parse HTTP request")?;
+    if status.is_partial() {
+        bail!("incomplete HTTP headers");
+    }
+
+    let method = req.method.context("missing HTTP method")?.to_string();
+    let path = req.path.context("missing HTTP path")?.to_string();
+
+    // Headers we control — strip any client-supplied versions to prevent spoofing
+    let strip = ["host", "connection", "x-forwarded-for", "x-request-id", "via"];
+
+    let mut out = Vec::with_capacity(len + 256);
+
+    // 1. Request line (unchanged)
+    out.extend_from_slice(method.as_bytes());
+    out.push(b' ');
+    out.extend_from_slice(path.as_bytes());
+    out.extend_from_slice(b" HTTP/1.1\r\n");
+
+    // 2. Rewritten Host
+    out.extend_from_slice(b"Host: ");
+    out.extend_from_slice(upstream_host.as_bytes());
+    out.extend_from_slice(b"\r\n");
+
+    // 3. Original headers minus the ones we control
+    for header in req.headers.iter() {
+        if header.name.is_empty() {
+            break;
+        }
+        if strip.iter().any(|s| header.name.eq_ignore_ascii_case(s)) {
+            continue;
+        }
+        out.extend_from_slice(header.name.as_bytes());
+        out.extend_from_slice(b": ");
+        out.extend_from_slice(header.value);
+        out.extend_from_slice(b"\r\n");
+    }
+
+    // 4. Injected observability + proxy headers
+    out.extend_from_slice(b"X-Forwarded-For: ");
+    out.extend_from_slice(client_ip.as_bytes());
+    out.extend_from_slice(b"\r\n");
+
+    out.extend_from_slice(b"X-Request-ID: ");
+    out.extend_from_slice(request_id.as_bytes());
+    out.extend_from_slice(b"\r\n");
+
+    out.extend_from_slice(b"Via: 1.1 rust-proxy\r\n");
+    out.extend_from_slice(b"Connection: close\r\n");
+
+    // 5. End of headers
+    out.extend_from_slice(b"\r\n");
+
+    Ok((out, method, path))
+}</code></pre>
+
+  <p>Step by step:</p>
+  <ol>
+    <li>Parse the raw bytes with httparse. If parsing fails or is incomplete, we will send a 400 to the client.</li>
+    <li>Build a new byte buffer for the outgoing request. Start with the request line (method + path + HTTP/1.1).</li>
+    <li>Write the rewritten <code>Host</code> header pointing at the upstream's address.</li>
+    <li>Copy all original headers <em>except</em> the ones in the <code>strip</code> list. The <code>eq_ignore_ascii_case</code> comparison handles both <code>X-Forwarded-For</code> and <code>x-forwarded-for</code> — HTTP headers are case-insensitive.</li>
+    <li>Append the injected headers: <code>X-Forwarded-For</code> with the real client IP, <code>X-Request-ID</code> with a UUID, <code>Via</code> and <code>Connection: close</code>.</li>
+    <li>Write the final <code>\r\n</code> that signals end of headers.</li>
+  </ol>
+
+  <h3>The round-robin balancer</h3>
+
+<pre><code>use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+pub struct Balancer {
+    upstreams: Vec&lt;SocketAddr&gt;,
+    counter: AtomicUsize,
+}
+
+impl Balancer {
+    pub fn new(upstreams: Vec&lt;SocketAddr&gt;) -&gt; Self {
+        Self {
+            upstreams,
+            counter: AtomicUsize::new(0),
+        }
+    }
+
+    /// Returns the next upstream address using round-robin selection.
+    /// Lock-free: uses AtomicUsize with Relaxed ordering.
+    pub fn next(&amp;self) -&gt; SocketAddr {
+        let idx = self.counter.fetch_add(1, Ordering::Relaxed) % self.upstreams.len();
+        self.upstreams[idx]
+    }
+
+    pub fn len(&amp;self) -&gt; usize {
+        self.upstreams.len()
+    }
+}</code></pre>
+
+  <p>The logic is beautifully simple. <code>counter</code> is an <code>AtomicUsize</code> — a number that can be read and incremented safely from multiple threads with no lock. <code>fetch_add(1, Ordering::Relaxed)</code> atomically increments the counter and returns the old value. We take <code>old_value % n_upstreams</code> to get an index that cycles through 0, 1, 2, 0, 1, 2, ... endlessly.</p>
+
+  <p><code>Ordering::Relaxed</code> means we don't need any synchronization guarantees beyond the atomic increment itself. We don't care about the order of other memory operations around this. For a counter that is just about "which upstream is next," Relaxed is correct and slightly faster than Acquire/Release.</p>
+
+  <p>With 3 upstreams configured (<code>9091</code>, <code>9092</code>, <code>9093</code>), requests are distributed: request 1 → 9091, request 2 → 9092, request 3 → 9093, request 4 → 9091, and so on.</p>
+
+  <h3>Understanding the logs</h3>
+
+<pre class="terminal"><code>INFO [a1b2c3d4] GET / → 127.0.0.1:9091 in 2ms
+INFO [e5f6a7b8] GET / → 127.0.0.1:9092 in 1ms</code></pre>
+
+  <ul>
+    <li><code>[a1b2c3d4]</code> — the first 8 characters of the UUID request ID. We only show 8 chars in logs to keep lines short, but the full UUID is forwarded to the backend in <code>X-Request-ID</code>. If you see an error in the backend log for request ID <code>a1b2c3d4...</code>, you can find the corresponding entry in the proxy log instantly.</li>
+    <li><code>GET /</code> — HTTP method and path extracted from the parsed request.</li>
+    <li><code>→ 127.0.0.1:9091</code> — which upstream received this request. You can watch the logs and see the round-robin distribution happening in real time.</li>
+    <li><code>in 2ms</code> — total wall-clock time from when the proxy received the request to when it finished writing the response. This includes parsing, connecting to upstream, and the full response transfer.</li>
+  </ul>
+
+  <h3>What the upstream receives</h3>
+
+  <p>When you send <code>GET / HTTP/1.1</code> from curl with a <code>Host: localhost</code> header, here is what actually arrives at the backend:</p>
+
+<pre><code>GET / HTTP/1.1
+Host: 127.0.0.1:9091
+X-Forwarded-For: 127.0.0.1
+X-Request-ID: a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6
+Via: 1.1 rust-proxy
+Connection: close</code></pre>
+
+  <p>The original <code>Host: localhost</code> from the client is gone, replaced with the upstream's actual address. The three injected headers are fresh from the proxy. <code>Connection: close</code> tells the upstream to close the connection after this response — no keep-alive complexity between proxy and backend.</p>
+
+  <div class="limitation">
+    <strong>Limitations of Option B</strong>
+    <ul>
+      <li><strong>No TLS</strong> — all traffic is plaintext. Anyone on the network can read requests and responses. The connection between client and proxy is unencrypted.</li>
+      <li><strong>No health checking</strong> — dead upstreams still get requests. If backend 9092 crashes, the proxy still sends every third request to it, which returns a 502 to the client. There is no automatic removal of dead backends from rotation.</li>
+    </ul>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="option-c">6. Option C — HTTPS + TLS + Health Checks</h2>
+  <!-- ================================================================ -->
+
+  <div class="option-header">
+    <span class="option-label">C</span>
+    <p style="margin:0; color: var(--muted);">Files: <code>src/main.rs</code>, <code>src/proxy.rs</code>, <code>src/tls.rs</code>, <code>src/health.rs</code>, <code>src/balancer.rs</code></p>
+  </div>
+
+  <p>Option C adds two major production features: TLS termination (clients connect via HTTPS) and health checks (dead backends are automatically removed from rotation, returning 503 when all are down).</p>
+
+  <h3>rustls — TLS without OpenSSL</h3>
+
+  <p><code>rustls</code> is a TLS implementation written entirely in Rust. Most software uses OpenSSL, which is a giant C library with a history of serious security vulnerabilities (Heartbleed being the most famous). rustls is a modern, memory-safe alternative. It supports TLS 1.2 and TLS 1.3.</p>
+
+  <p><strong>TLS 1.2 vs 1.3</strong> — TLS 1.3 is faster (the handshake takes one fewer round trip), more secure (removes older cipher suites with known weaknesses), and simpler. TLS 1.2 is still in use because many old clients and servers don't support 1.3 yet. We support both.</p>
+
+  <p><code>rcgen</code> is a library that generates a self-signed certificate in memory at startup. You do not need to run OpenSSL commands or manage files. This is perfect for development — the cert is generated fresh each time the process starts.</p>
+
+  <h3>tls.rs — building the TLS acceptor</h3>
+
+<pre><code>use anyhow::{Context, Result};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+use rustls::ServerConfig;
+use std::sync::Arc;
+use tokio_rustls::TlsAcceptor;
+
+use crate::config::TlsConfig;
+
+pub fn build_acceptor(cfg: &amp;TlsConfig) -&gt; Result&lt;TlsAcceptor&gt; {
+    let (certs, key) = if cfg.cert_path.is_empty() {
+        generate_self_signed()?
+    } else {
+        load_pem(&amp;cfg.cert_path, &amp;cfg.key_path)?
+    };
+
+    let server_config = ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .context("failed to set TLS protocol versions")?
+    .with_no_client_auth()
+    .with_single_cert(certs, key)
+    .context("failed to build TLS server config")?;
+
+    Ok(TlsAcceptor::from(Arc::new(server_config)))
+}
+
+fn generate_self_signed() -&gt; Result&lt;(Vec&lt;CertificateDer&lt;'static&gt;&gt;, PrivateKeyDer&lt;'static&gt;)&gt; {
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
+        .context("failed to generate self-signed cert")?;
+    let cert_der = CertificateDer::from(cert.cert.der().to_vec());
+    let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(
+        cert.key_pair.serialize_der(),
+    ));
+    Ok((vec![cert_der], key_der))
+}</code></pre>
+
+  <p>Line by line:</p>
+  <ul>
+    <li><code>ServerConfig::builder_with_provider</code> — start building a TLS server config. <code>ring</code> is the cryptographic backend (provides the actual encryption algorithms).</li>
+    <li><code>.with_safe_default_protocol_versions()</code> — enable TLS 1.2 and 1.3, disable older insecure versions (TLS 1.0, 1.1, SSL 2/3).</li>
+    <li><code>.with_no_client_auth()</code> — the server will not require clients to present a certificate. Standard for public HTTPS servers. (Mutual TLS / mTLS would use a different call here.)</li>
+    <li><code>.with_single_cert(certs, key)</code> — load the certificate and private key. The cert is what the server shows to clients as proof of identity. The key is kept secret and used to sign the handshake.</li>
+    <li><code>TlsAcceptor::from(Arc::new(server_config))</code> — wrap the config in an acceptor. The <code>Arc</code> allows it to be cloned cheaply and shared across all connection-handling tasks.</li>
+  </ul>
+
+  <p>When a client connects, we call <code>acceptor.accept(tcp)</code>. This performs the full TLS handshake over the raw TCP stream and returns a <code>TlsStream</code> — a wrapper around the TCP stream that transparently encrypts/decrypts everything you read and write through it.</p>
+
+  <h3>health.rs — the background health checker</h3>
+
+<pre><code>use std::net::SocketAddr;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
+use tracing::{debug, warn};
+
+pub type HealthFlags = Arc&lt;Vec&lt;AtomicBool&gt;&gt;;
+
+pub fn new_flags(n: usize) -&gt; HealthFlags {
+    Arc::new((0..n).map(|_| AtomicBool::new(true)).collect())
+}
+
+pub fn spawn_checkers(
+    upstreams: Vec&lt;SocketAddr&gt;,
+    flags: HealthFlags,
+    interval: Duration,
+    probe_timeout: Duration,
+    path: String,
+) {
+    for (i, addr) in upstreams.into_iter().enumerate() {
+        let flags = Arc::clone(&amp;flags);
+        let path = path.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(interval).await;
+                let healthy = probe(addr, probe_timeout, &amp;path).await;
+                flags[i].store(healthy, Ordering::Relaxed);
+                if healthy {
+                    debug!(upstream = %addr, "health check OK");
+                } else {
+                    warn!(upstream = %addr, "health check FAILED — marking unhealthy");
+                }
+            }
+        });
+    }
+}
+
+async fn probe(addr: SocketAddr, probe_timeout: Duration, path: &amp;str) -&gt; bool {
+    matches!(timeout(probe_timeout, do_probe(addr, path)).await, Ok(true))
+}
+
+async fn do_probe(addr: SocketAddr, path: &amp;str) -&gt; bool {
+    let Ok(mut stream) = TcpStream::connect(addr).await else {
+        return false;
+    };
+    let req = format!("GET {} HTTP/1.0\r\nHost: {}\r\n\r\n", path, addr);
+    if stream.write_all(req.as_bytes()).await.is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 256];
+    let n = match stream.read(&amp;mut buf).await {
+        Ok(n) if n &gt; 0 =&gt; n,
+        _ =&gt; return false,
+    };
+    let Ok(s) = std::str::from_utf8(&amp;buf[..n]) else {
+        return false;
+    };
+    s.starts_with("HTTP/")
+        &amp;&amp; s.split_whitespace()
+            .nth(1)
+            .map_or(false, |c| c.starts_with('2'))
+}</code></pre>
+
+  <p>What this code does:</p>
+  <ul>
+    <li><code>HealthFlags</code> is a type alias for <code>Arc&lt;Vec&lt;AtomicBool&gt;&gt;</code> — a shared, reference-counted vector of atomic booleans, one per upstream. <code>true</code> = healthy, <code>false</code> = dead.</li>
+    <li><code>new_flags(n)</code> creates <code>n</code> flags all initialized to <code>true</code> (start optimistic — assume everyone is up).</li>
+    <li><code>spawn_checkers</code> starts one background task per upstream. Each task loops forever: sleep for <code>interval</code> seconds, run a probe, update the flag.</li>
+    <li><code>do_probe</code> makes a real TCP connection and sends <code>GET /health HTTP/1.0</code>. It reads the first 256 bytes of the response. If the response starts with <code>HTTP/</code> and the status code starts with <code>2</code> (meaning 200–299), the backend is healthy.</li>
+    <li>We use <code>HTTP/1.0</code> (not 1.1) in the probe because HTTP/1.0 does not require a <code>Host</code> header, making the probe simpler. We add Host anyway for compatibility.</li>
+    <li>The entire probe is wrapped in a <code>timeout</code>. If the backend is hung and never responds, we don't wait forever — we fail after <code>probe_timeout</code> seconds.</li>
+  </ul>
+
+  <h3>balancer.rs — health-aware round-robin</h3>
+
+<pre><code>use std::net::SocketAddr;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::health::HealthFlags;
+
+pub struct Balancer {
+    upstreams: Vec&lt;SocketAddr&gt;,
+    health: HealthFlags,
+    counter: AtomicUsize,
+}
+
+impl Balancer {
+    pub fn new(upstreams: Vec&lt;SocketAddr&gt;, health: HealthFlags) -&gt; Self {
+        Self {
+            upstreams,
+            health,
+            counter: AtomicUsize::new(0),
+        }
+    }
+
+    /// Returns the next healthy upstream using round-robin selection.
+    /// Returns None if all upstreams are unhealthy.
+    pub fn next_healthy(&amp;self) -&gt; Option&lt;SocketAddr&gt; {
+        let start = self.counter.fetch_add(1, Ordering::Relaxed);
+        let n = self.upstreams.len();
+        for i in 0..n {
+            let idx = (start + i) % n;
+            if self.health[idx].load(Ordering::Relaxed) {
+                return Some(self.upstreams[idx]);
+            }
+        }
+        None
+    }
+
+    pub fn len(&amp;self) -&gt; usize {
+        self.upstreams.len()
+    }
+}</code></pre>
+
+  <p>The key change from Option B: <code>next_healthy()</code> instead of <code>next()</code>. We still advance the counter (to maintain fair distribution), but then we linear-scan from that position, wrapping around, looking for the first upstream whose health flag is <code>true</code>. If all flags are <code>false</code>, we return <code>None</code>.</p>
+
+  <p>When <code>next_healthy()</code> returns <code>None</code>, the proxy responds with <code>503 Service Unavailable</code> — a proper HTTP error response rather than a TCP reset. The client gets a meaningful error message instead of a broken connection.</p>
+
+  <p>The beauty of <code>AtomicBool</code> here: the health checker task and the request-handling tasks are running concurrently on different threads. When the health checker calls <code>flags[i].store(false, Ordering::Relaxed)</code>, the change is visible to all other threads instantly (atomics are by definition visible across threads). No mutex, no lock contention.</p>
+
+  <h3>Understanding the startup logs</h3>
+
+<pre class="terminal"><code>INFO c_tls_health_checks: HTTPS proxy listening addr=0.0.0.0:8444 upstreams=2
+WARN c_tls_health_checks: upstream=127.0.0.1:9092 "health check FAILED — marking unhealthy"</code></pre>
+
+  <p><strong>Why <code>0.0.0.0</code> instead of <code>127.0.0.1</code>?</strong></p>
+  <p><code>127.0.0.1</code> is the loopback interface — only connections from the same machine can reach it. <code>0.0.0.0</code> means "listen on all network interfaces" — connections from other machines on the network can reach it too. In a development environment, <code>127.0.0.1</code> is safer. In a production server, you often want <code>0.0.0.0</code> so the server is reachable from the network.</p>
+
+  <p><strong>Why is the health check FAILED warning expected?</strong></p>
+  <p>The health checker starts immediately and begins probing all upstreams. If some backends are not running (perhaps you only started one of the two for testing), the probe correctly reports them as unhealthy. This is not a bug — this is the system working as designed. Once you start the backend, the next probe will succeed and the flag will flip back to <code>true</code>.</p>
+
+  <h3>Testing with curl</h3>
+
+<pre class="terminal"><code>$ curl -k https://localhost:8444/
+Hello from backend!</code></pre>
+
+  <p>The <code>-k</code> flag tells curl "skip certificate verification." Without it, curl would refuse to connect because our self-signed certificate is not signed by a trusted authority that curl's certificate store knows about. The <code>-k</code> flag is only appropriate for development and testing — never use it in production scripts that talk to real servers.</p>
+
+  <div class="limitation">
+    <strong>Limitations of Option C</strong>
+    <ul>
+      <li><strong>HTTP/1.1 only</strong> — we still parse HTTP ourselves and use raw byte copying. Each client connection can only have one in-flight request at a time. High-traffic clients that support HTTP/2 can't benefit from multiplexing.</li>
+    </ul>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="option-d">7. Option D — HTTP/2 via hyper + ALPN</h2>
+  <!-- ================================================================ -->
+
+  <div class="option-header">
+    <span class="option-label">D</span>
+    <p style="margin:0; color: var(--muted);">Files: <code>src/main.rs</code>, <code>src/proxy.rs</code>, <code>src/tls.rs</code></p>
+  </div>
+
+  <p>Option D replaces the hand-written HTTP parser with <code>hyper</code>, Rust's most widely-used HTTP library. By doing this, we get HTTP/2 multiplexing for free (hyper handles the framing), and we get typed request/response objects instead of raw bytes. The proxy now accepts both HTTP/1.1 and HTTP/2 clients, negotiated automatically during the TLS handshake via ALPN.</p>
+
+  <h3>hyper — typed HTTP instead of raw bytes</h3>
+
+  <p>In Options B and C, we managed HTTP as bytes ourselves: read into a buffer, parse with httparse, write rewritten bytes back out. This is educational, but tedious. <code>hyper</code> gives you typed objects:</p>
+
+  <ul>
+    <li><code>Request&lt;Incoming&gt;</code> — an HTTP request where the body is a streaming <code>Incoming</code> type that can be read incrementally.</li>
+    <li><code>Response&lt;BoxBody&gt;</code> — an HTTP response with a boxed body type that abstracts over both empty error responses and streaming upstream responses.</li>
+    <li><code>StatusCode::SERVICE_UNAVAILABLE</code> instead of the hardcoded bytes <code>b"HTTP/1.1 503..."</code>.</li>
+    <li>URI parsing, header access, method types — all provided as safe, well-tested abstractions.</li>
+  </ul>
+
+  <h3>ALPN — negotiating HTTP version during the TLS handshake</h3>
+
+  <p>In Option D's <code>tls.rs</code>, we add one important line to the TLS configuration:</p>
+
+<pre><code>// Advertise HTTP/2 and HTTP/1.1 during TLS handshake (ALPN)
+server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];</code></pre>
+
+  <p>This tells the TLS layer to include these protocol names in the TLS handshake's ServerHello message. When a client connects and sends its ClientHello with its own list of protocols, rustls picks the best match (preferring <code>h2</code> since it is listed first) and includes it in the handshake response.</p>
+
+  <p>By the time the TLS handshake completes, both sides know which protocol was agreed on. We read that negotiated protocol like this:</p>
+
+<pre><code>let alpn = tls_stream.get_ref().1.alpn_protocol().map(|p| p.to_vec());</code></pre>
+
+  <p><code>get_ref().1</code> accesses the TLS session state inside the stream. <code>alpn_protocol()</code> returns the agreed-upon protocol as bytes — either <code>b"h2"</code> or <code>b"http/1.1"</code> or <code>None</code> if no ALPN was negotiated. We use this to decide which HTTP version handler to use.</p>
+
+  <h3>Dispatching based on ALPN</h3>
+
+<pre><code>if alpn.as_deref() == Some(b"h2") {
+    if let Err(e) = server_http2::Builder::new(TokioExecutor::new())
+        .serve_connection(TokioIo::new(tls_stream), service)
+        .await
+    {
+        warn!(error = %e, "http2 connection error");
+    }
+} else {
+    if let Err(e) = server_http1::Builder::new()
+        .serve_connection(TokioIo::new(tls_stream), service)
+        .await
+    {
+        warn!(error = %e, "http1 connection error");
+    }
+}</code></pre>
+
+  <p>If ALPN negotiated <code>h2</code>, we hand the connection to <code>http2::Builder</code>. It handles all the HTTP/2 framing, stream multiplexing, header compression (HPACK), and flow control. For each incoming HTTP/2 request (potentially many simultaneously on the same connection), it calls our service once.</p>
+
+  <p>If ALPN negotiated <code>http/1.1</code> (or nothing), we use <code>http1::Builder</code>. Same service, different HTTP version handling.</p>
+
+  <p>The <code>service</code> object is the same in both cases — it does not need to know which HTTP version it is serving. This is the point of the abstraction.</p>
+
+  <h3>The Service trait</h3>
+
+  <p>In Rust, a <strong>trait</strong> is like an interface in Java or Go. It defines a set of methods a type must implement. hyper's <code>Service</code> trait defines how a type handles incoming requests:</p>
+
+<pre><code>#[derive(Clone)]
+pub struct ProxyService {
+    pub balancer: Arc&lt;Balancer&gt;,
+    pub config: Arc&lt;Config&gt;,
+    pub client_ip: String,
+}
+
+impl Service&lt;Request&lt;Incoming&gt;&gt; for ProxyService {
+    type Response = Response&lt;BoxBody&gt;;
+    type Error = Infallible;
+    type Future = Pin&lt;Box&lt;dyn Future&lt;Output = Result&lt;Self::Response, Self::Error&gt;&gt; + Send&gt;&gt;;
+
+    fn call(&amp;self, req: Request&lt;Incoming&gt;) -&gt; Self::Future {
+        let this = self.clone();
+        Box::pin(async move { Ok(this.handle(req).await) })
+    }
+}</code></pre>
+
+  <p>Breaking down the types:</p>
+  <ul>
+    <li><code>type Response = Response&lt;BoxBody&gt;</code> — when we handle a request, we return a typed HTTP response.</li>
+    <li><code>type Error = Infallible</code> — <code>Infallible</code> is a type that cannot exist. It means this service <em>never</em> returns an error from <code>call()</code>. Instead of propagating errors, we catch them inside <code>handle()</code> and return 502/503 responses. The client always gets an HTTP response, never a broken connection.</li>
+    <li><code>type Future = Pin&lt;Box&lt;dyn Future&lt;...&gt;&gt;&gt;</code> — the return type of <code>call()</code> is a boxed, pinned future. This is the standard way to return an async value from a trait method in Rust. The <code>Pin</code> ensures the future does not move in memory while awaited.</li>
+    <li><code>self.clone()</code> — we clone the service to move into the async block. This is cheap because everything inside is wrapped in <code>Arc</code> (reference-counted pointers — cloning an Arc just increments a counter).</li>
+  </ul>
+
+  <h3>BoxBody — a unified body type</h3>
+
+  <p>In HTTP/2, bodies are streams of bytes. For error responses (502, 503), we want an empty body. For proxied responses, we want to stream the upstream's response body back to the client.</p>
+
+  <p><code>BoxBody</code> is a type alias for a boxed body that can hold either:</p>
+
+<pre><code>pub type BoxBody = http_body_util::combinators::BoxBody&lt;Bytes, hyper::Error&gt;;
+
+fn empty_body() -&gt; BoxBody {
+    Empty::&lt;Bytes&gt;::new()
+        .map_err(|_: Infallible| unreachable!())
+        .boxed()
+}
+
+fn error_response(status: StatusCode) -&gt; Response&lt;BoxBody&gt; {
+    Response::builder()
+        .status(status)
+        .header("content-length", "0")
+        .header("connection", "close")
+        .body(empty_body())
+        .unwrap()
+}</code></pre>
+
+  <p>For the proxied response, we take the upstream's <code>Incoming</code> body and box it:</p>
+
+<pre><code>response.map(|body| body.boxed())</code></pre>
+
+  <p>This streams bytes from upstream directly to the client without buffering the entire body in memory — important for large file downloads.</p>
+
+  <h3>Forwarding to backends over HTTP/1.1</h3>
+
+<pre><code>// HTTP/1.1 handshake with upstream
+let (mut sender, conn) = match http1::Builder::new()
+    .handshake(TokioIo::new(stream))
+    .await
+{
+    Ok(v) =&gt; v,
+    Err(e) =&gt; { return error_response(StatusCode::BAD_GATEWAY); }
+};
+tokio::spawn(conn);
+
+// Forward request
+let response = match sender.send_request(forwarded).await {
+    Ok(r) =&gt; r,
+    Err(e) =&gt; { return error_response(StatusCode::BAD_GATEWAY); }
+};</code></pre>
+
+  <p>Even though clients can connect via HTTP/2, we forward to backends over HTTP/1.1. Why? Backends are simple application servers. They don't benefit from HTTP/2 over an internal loopback connection. HTTP/2 benefits are about multiplexing over high-latency connections (the internet). On a local network, HTTP/1.1 is simpler and works fine.</p>
+
+  <p><code>http1::Builder::new().handshake(stream)</code> initializes an HTTP/1.1 client connection to the upstream and returns two things:</p>
+  <ul>
+    <li><code>sender</code> — a handle to send requests.</li>
+    <li><code>conn</code> — a Future that drives the connection state machine (reads responses, handles keep-alive, etc).</li>
+  </ul>
+
+  <p>We <code>tokio::spawn(conn)</code> to run the connection driver concurrently in the background, then use <code>sender.send_request(forwarded)</code> to send our request and wait for the response.</p>
+
+  <h3>URI rewriting</h3>
+
+  <p>When a client sends a request to the proxy, the URI in the request line is typically path-only: <code>GET /api/users HTTP/1.1</code>. But in some cases (particularly HTTP proxies in browsers), the client might send an absolute URI: <code>GET http://proxy.example.com/api/users HTTP/1.1</code>.</p>
+
+  <p>The backend should receive a path-only URI. We rewrite it:</p>
+
+<pre><code>// Rewrite URI to path-only (backend expects GET /path HTTP/1.1, not absolute URI)
+let path_and_query = parts.uri
+    .path_and_query()
+    .map(|p| p.as_str())
+    .unwrap_or("/");
+parts.uri = path_and_query.parse()?;</code></pre>
+
+  <p>So whether the client sent <code>/hello</code> or <code>https://myproxy.com/hello?q=1</code>, the backend always receives <code>/hello?q=1</code>.</p>
+
+  <h3>The complete handle() method</h3>
+
+<pre><code>impl ProxyService {
+    async fn handle(&amp;self, req: Request&lt;Incoming&gt;) -&gt; Response&lt;BoxBody&gt; {
+        let start = Instant::now();
+        let request_id = Uuid::new_v4().to_string();
+        let method = req.method().clone();
+        let path = req.uri().path().to_string();
+
+        // Pick healthy upstream
+        let upstream_addr = match self.balancer.next_healthy() {
+            Some(addr) =&gt; addr,
+            None =&gt; {
+                warn!(request_id = %&amp;request_id[..8], "all upstreams unhealthy — sent 503");
+                return error_response(StatusCode::SERVICE_UNAVAILABLE);
+            }
+        };
+
+        // Build the forwarded request
+        let forwarded = match build_forwarded_request(req, upstream_addr, &amp;self.client_ip, &amp;request_id) {
+            Ok(r) =&gt; r,
+            Err(e) =&gt; {
+                warn!(request_id = %&amp;request_id[..8], error = %e, "failed to build forwarded request — sent 502");
+                return error_response(StatusCode::BAD_GATEWAY);
+            }
+        };
+
+        // Connect to upstream
+        let connect_dur = Duration::from_secs(self.config.timeouts.connect_timeout_secs);
+        let stream = match timeout(connect_dur, TcpStream::connect(upstream_addr)).await {
+            Ok(Ok(s)) =&gt; s,
+            Ok(Err(e)) =&gt; {
+                warn!(request_id = %&amp;request_id[..8], upstream = %upstream_addr, error = %e, "upstream unreachable — sent 502");
+                return error_response(StatusCode::BAD_GATEWAY);
+            }
+            Err(_) =&gt; {
+                warn!(request_id = %&amp;request_id[..8], upstream = %upstream_addr, "upstream connect timeout — sent 502");
+                return error_response(StatusCode::BAD_GATEWAY);
+            }
+        };
+
+        // HTTP/1.1 handshake with upstream
+        let (mut sender, conn) = match http1::Builder::new()
+            .handshake(TokioIo::new(stream))
+            .await
+        {
+            Ok(v) =&gt; v,
+            Err(e) =&gt; {
+                warn!(request_id = %&amp;request_id[..8], error = %e, "http1 handshake failed — sent 502");
+                return error_response(StatusCode::BAD_GATEWAY);
+            }
+        };
+        tokio::spawn(conn);
+
+        // Forward request
+        let response = match sender.send_request(forwarded).await {
+            Ok(r) =&gt; r,
+            Err(e) =&gt; {
+                warn!(request_id = %&amp;request_id[..8], error = %e, "upstream request failed — sent 502");
+                return error_response(StatusCode::BAD_GATEWAY);
+            }
+        };
+
+        let elapsed = start.elapsed().as_millis();
+        info!(
+            "[{}] {} {} → {} in {}ms",
+            &amp;request_id[..8], method, path, upstream_addr, elapsed
+        );
+
+        // Stream the upstream response body back to the client
+        response.map(|body| body.boxed())
+    }
+}</code></pre>
+
+  <h3>Testing HTTP/2 with curl</h3>
+
+<pre class="terminal"><code>$ curl -k --http2 -v https://localhost:8443/ 2&gt;&amp;1 | findstr /i "alpn http/"</code></pre>
+
+  <p>What this command does:</p>
+  <ul>
+    <li><code>-k</code> — skip certificate verification (our self-signed cert).</li>
+    <li><code>--http2</code> — tell curl to attempt HTTP/2 via ALPN. curl will include <code>h2</code> in its ALPN list during the TLS handshake.</li>
+    <li><code>-v</code> — verbose output. curl prints detailed information about the TLS handshake, ALPN negotiation, and HTTP framing.</li>
+    <li><code>2&gt;&amp;1</code> — redirect stderr (where verbose output goes) to stdout.</li>
+    <li><code>findstr /i "alpn http/"</code> — on Windows, filter lines containing "alpn" or "http/" (case-insensitive). On Linux/macOS, you would use <code>grep -i "alpn\|http/"</code>.</li>
+  </ul>
+
+  <p>Expected output:</p>
+
+<pre class="terminal"><code>* ALPN: server accepted h2
+&lt; HTTP/2 200</code></pre>
+
+  <ul>
+    <li><code>* ALPN: server accepted h2</code> — the TLS handshake succeeded, and the server chose <code>h2</code> as the protocol. Lines starting with <code>*</code> are curl informational messages.</li>
+    <li><code>&lt; HTTP/2 200</code> — the response came back over HTTP/2. Lines starting with <code>&lt;</code> are response headers. The <code>200</code> is the status code.</li>
+  </ul>
+
+  <div class="callout">
+    <strong>HTTP/2 multiplexing diagram</strong>
+    <pre style="background:none; border:none; padding:8px 0; margin:0; font-size:0.82rem;">
+One TLS connection, many concurrent streams:
+
+Client                    Proxy
+  |                         |
+  |-- HEADERS stream=1 --→  |  (GET /api/users)
+  |-- HEADERS stream=3 --→  |  (GET /api/posts)
+  |-- HEADERS stream=5 --→  |  (GET /static/app.js)
+  |                         |
+  |  ←-- HEADERS stream=3 --|  (200 OK, posts)
+  |  ←-- DATA    stream=3 --|
+  |  ←-- HEADERS stream=1 --|  (200 OK, users)
+  |  ←-- DATA    stream=1 --|
+  |  ←-- HEADERS stream=5 --|  (200 OK, js file)
+  |  ←-- DATA    stream=5 --|
+    </pre>
+    Three requests in flight simultaneously on one connection, responses arriving in any order. Stream IDs keep the frames for each request/response pair associated with each other.
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="glossary">8. Concepts Glossary</h2>
+  <!-- ================================================================ -->
+
+  <p>Quick reference for every technical term used in this guide.</p>
+
+  <h3>TCP</h3>
+  <p>Transmission Control Protocol. A reliable, ordered, bidirectional byte stream between two programs over a network. TCP guarantees that bytes arrive in the same order they were sent, with no gaps. TCP does not know about HTTP, JSON, or any higher-level concept — it just moves bytes. Port numbers let multiple programs on the same machine each have their own TCP connections.</p>
+
+  <h3>HTTP</h3>
+  <p>HyperText Transfer Protocol. A text-based request/response protocol that runs over TCP. A request has a method (GET, POST, etc.), a path (<code>/api/users</code>), headers (key-value metadata), and an optional body. A response has a status code (200, 404, 502, etc.), headers, and an optional body. HTTP/1.1 allows one request per connection at a time. The protocol is fully human-readable text, which makes debugging straightforward.</p>
+
+  <h3>HTTPS</h3>
+  <p>HTTP over TLS. The HTTP request/response format is the same, but the bytes are encrypted before going on the network. To an observer, HTTPS traffic looks like random bytes. The correct decryption key is only known by the client and server. HTTPS protects against eavesdropping and tampering. The HTTPS port is conventionally 443.</p>
+
+  <h3>TLS</h3>
+  <p>Transport Layer Security. An encryption protocol that wraps a TCP connection. TLS authenticates the server (proves you are talking to the right machine via certificates), negotiates shared encryption keys using public-key cryptography, and encrypts all further communication. TLS 1.3 is the current version. The handshake takes one or two network round trips before application data can flow.</p>
+
+  <h3>ALPN</h3>
+  <p>Application-Layer Protocol Negotiation. A TLS extension that allows the client and server to agree on which application protocol to use (HTTP/1.1 vs HTTP/2) as part of the TLS handshake, at no extra cost in round trips. The client sends a list: <code>["h2", "http/1.1"]</code>. The server picks the best one it supports and includes it in the handshake response. After the handshake completes, both sides know which protocol to speak.</p>
+
+  <h3>async/await</h3>
+  <p>A language feature for writing concurrent code that looks sequential. An <code>async fn</code> returns a Future instead of running immediately. Calling <code>.await</code> on a Future suspends the current function until the Future completes, but does not block the thread — other tasks can run in the meantime. This lets you write code like "connect to server, then send request, then read response" in a natural linear style, while the runtime handles interleaving with thousands of other concurrent operations.</p>
+
+  <h3>Future</h3>
+  <p>A value representing a computation that has not finished yet. In Rust, a Future is a state machine generated by the compiler from an <code>async fn</code>. It stores all the local variables and the "current position" of the function. When polled by the runtime, it either makes progress and suspends (returning Pending) or finishes (returning Ready). Futures do nothing unless polled — they are lazy. The Tokio runtime is what polls them.</p>
+
+  <h3>Tokio</h3>
+  <p>An async runtime for Rust. It provides a thread pool, an event loop backed by epoll/kqueue/IOCP, timers, async TCP/UDP sockets, channels, and utilities for spawning and scheduling tasks. When you write <code>#[tokio::main]</code>, Tokio starts a thread pool and begins running your async main function. Without a runtime, async code in Rust does nothing.</p>
+
+  <h3>tokio::spawn</h3>
+  <p>Creates a new Tokio task. A task is a lightweight unit of work — like a thread, but scheduled by Tokio rather than the OS. You can have millions of tasks on a handful of threads. Each spawned task runs concurrently with all other tasks. <code>tokio::spawn</code> takes an async block, creates a task for it, and immediately returns a <code>JoinHandle</code> that you can await if you want to wait for the task to finish.</p>
+
+  <h3>AtomicBool / AtomicUsize</h3>
+  <p>Atomic types that can be read and written from multiple threads simultaneously without locks. The CPU provides hardware instructions that guarantee atomicity — an increment or store operation appears to happen instantaneously to all other threads. <code>AtomicBool</code> is used for the health flags (healthy/unhealthy per upstream). <code>AtomicUsize</code> is used for the round-robin counter and active connection count. Atomics are the right tool for simple shared counters and flags where you don't need to coordinate complex state.</p>
+
+  <h3>UUID</h3>
+  <p>Universally Unique Identifier. A 128-bit number formatted as 32 hexadecimal digits with hyphens: <code>a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6</code>. Generated randomly (UUID v4). The probability of two UUIDs colliding is astronomically low. We generate one per request and use the first 8 characters in logs and the full UUID in the <code>X-Request-ID</code> header. This lets you search for a specific request across any log in the system.</p>
+
+  <h3>Round-robin</h3>
+  <p>A load balancing algorithm that cycles through a list in order: upstream 1, then 2, then 3, then back to 1. Simple, fair, and stateless — each upstream gets roughly the same number of requests. It does not account for differences in upstream capacity or current load. Alternatives include least-connections (send to the upstream with the fewest active requests), random, and weighted round-robin.</p>
+
+  <h3>Health check</h3>
+  <p>A periodic test to verify that an upstream is alive and able to serve requests. Typically: make a TCP connection, send a minimal HTTP request (<code>GET /health HTTP/1.0</code>), check that the response has a 2xx status code. If the check fails, the upstream is marked unhealthy and removed from the load balancing rotation. The check runs again on a timer — when the upstream recovers, it is automatically re-added to rotation.</p>
+
+  <h3>502 Bad Gateway</h3>
+  <p>An HTTP status code meaning "the proxy received an invalid or no response from the upstream." You get a 502 when the upstream is running but misbehaving (returning garbage), or when the proxy can connect to the upstream port but the connection immediately fails. In our proxy, we return 502 when <code>TcpStream::connect</code> fails or when the upstream connection times out during an active request.</p>
+
+  <h3>503 Service Unavailable</h3>
+  <p>An HTTP status code meaning "the server cannot handle the request right now, usually temporarily." In our proxy, we return 503 specifically when the health check has marked all upstreams as unhealthy and there is nobody to forward the request to. This is the correct response because the situation is temporary — once backends recover and pass health checks, the 503s stop.</p>
+
+  <h3>HPACK compression</h3>
+  <p>The header compression algorithm used in HTTP/2. In HTTP/1.1, every request sends all headers as plaintext text, even the ones that never change (like <code>Accept-Encoding</code>, <code>User-Agent</code>). HPACK maintains a shared "header table" on both sides of the connection. Once a header has been sent, future requests can refer to it by index instead of sending it again. This significantly reduces the overhead of many small requests to the same server.</p>
+
+  <h3>Multiplexing</h3>
+  <p>Sending multiple logical streams of data over a single physical connection, interleaved. HTTP/2 multiplexing allows many requests to be in flight simultaneously on one TCP connection, with responses coming back in any order. Each request/response pair is a "stream" identified by a number. The HTTP/2 framing layer handles splitting requests into frames, labeling them with stream IDs, and reassembling them. Without multiplexing (HTTP/1.1), you need one TCP connection per in-flight request, which is expensive.</p>
+
+</div>
+</body>
+</html>
