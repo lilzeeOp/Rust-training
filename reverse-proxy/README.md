@@ -30,12 +30,12 @@ python --version
 ## Project structure
 
 ```
-reverse-proxy/
-├── Cargo.toml               # Workspace — all 4 crates share the build cache
-├── a-tcp-passthrough/       # Option A
-├── b-http-load-balancer/    # Option B
-├── c-tls-health-checks/     # Option C
-└── d-http2-hyper/           # Option D
+D:\Learning\Rust\reverse-proxy\
+├── Cargo.toml                        # Workspace — all 4 crates share the build cache
+├── a-tcp-passthrough\                # Option A
+├── b-http-load-balancer\             # Option B
+├── c-tls-health-checks\              # Option C
+└── d-http2-hyper\                    # Option D
 ```
 
 Each crate has its own `config.toml` that controls the listen address, upstream addresses, TLS paths, and timeouts.
@@ -46,7 +46,7 @@ Each crate has its own `config.toml` that controls the listen address, upstream 
 
 ```bash
 git clone https://github.com/lilzeeOp/Rust-training.git
-cd Rust-training/reverse-proxy
+cd D:\Learning\Rust\reverse-proxy
 cargo build
 ```
 
@@ -98,7 +98,7 @@ Leave both terminals running for all four options.
 Open **Terminal 3** and run:
 
 ```bash
-cd a-tcp-passthrough
+cd D:\Learning\Rust\reverse-proxy\a-tcp-passthrough
 cargo run
 ```
 
@@ -138,7 +138,7 @@ Stop the proxy with `Ctrl+C` when done.
 Open **Terminal 3** and run:
 
 ```bash
-cd b-http-load-balancer
+cd D:\Learning\Rust\reverse-proxy\b-http-load-balancer
 cargo run
 ```
 
@@ -175,7 +175,7 @@ Stop with `Ctrl+C`.
 Open **Terminal 3** and run:
 
 ```bash
-cd c-tls-health-checks
+cd D:\Learning\Rust\reverse-proxy\c-tls-health-checks
 cargo run
 ```
 
@@ -213,7 +213,7 @@ Stop with `Ctrl+C`.
 Open **Terminal 3** and run:
 
 ```bash
-cd d-http2-hyper
+cd D:\Learning\Rust\reverse-proxy\d-http2-hyper
 cargo run
 ```
 
@@ -256,6 +256,7 @@ Stop with `Ctrl+C`.
 ## Run all tests
 
 ```bash
+cd D:\Learning\Rust\reverse-proxy
 cargo test
 ```
 
