@@ -1,0 +1,16 @@
+listen_addr    = "0.0.0.0:8443"
+upstream_addrs = ["127.0.0.1:9091", "127.0.0.1:9092"]
+
+[tls]
+# Leave both blank to auto-generate a self-signed dev cert at startup
+cert_path = ""
+key_path  = ""
+
+[health]
+interval_secs = 10
+timeout_secs  = 2
+path          = "/health"
+
+[timeouts]
+connect_timeout_secs  = 5
+transfer_timeout_secs = 60

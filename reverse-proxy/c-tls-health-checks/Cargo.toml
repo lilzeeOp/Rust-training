@@ -2,3 +2,17 @@
 name = "c-tls-health-checks"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+tokio              = { version = "1", features = ["full"] }
+tokio-rustls       = "0.26"
+rustls             = { version = "0.23", features = ["ring"] }
+rustls-pemfile     = "2"
+rcgen              = "0.13"
+serde              = { version = "1", features = ["derive"] }
+toml               = "0.8"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow             = "1"
+httparse           = "1"
+uuid               = { version = "1", features = ["v4", "fast-rng"] }
