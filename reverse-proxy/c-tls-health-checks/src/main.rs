@@ -1,3 +1,16 @@
+//! Option C — HTTPS reverse proxy with TLS termination, health checks, and round-robin
+//! load balancing.
+//!
+//! AWS-grade features:
+//!   - TLS 1.2/1.3 termination via rustls (self-signed cert auto-generated if not provided)
+//!   - Background health checker per upstream (configurable interval + timeout)
+//!   - Health-aware round-robin: skips dead upstreams, returns 503 when all down
+//!   - X-Forwarded-For, X-Forwarded-Proto: https, X-Request-ID, Via header injection
+//!   - 503 / 502 / 431 / 400 HTTP error responses (no TCP resets)
+//!   - Structured request log: [req_id] METHOD /path → upstream in Xms
+//!   - Graceful CTRL+C shutdown
+//!   - Active connection counter
+
 mod balancer;
 mod config;
 mod health;
@@ -5,4 +18,93 @@ mod http;
 mod proxy;
 mod tls;
 
-fn main() {}
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
+
+use anyhow::{Context, Result};
+use tracing::{error, info};
+
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install CTRL+C signal handler");
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("c_tls_health_checks=info".parse().unwrap()),
+        )
+        .init();
+
+    let config = Arc::new(
+        config::Config::load("config.toml").context("failed to load config.toml")?,
+    );
+
+    let acceptor = Arc::new(
+        tls::build_acceptor(&config.tls).context("failed to build TLS acceptor")?,
+    );
+
+    let flags = health::new_flags(config.upstream_addrs.len());
+
+    health::spawn_checkers(
+        config.upstream_socket_addrs(),
+        Arc::clone(&flags),
+        std::time::Duration::from_secs(config.health.interval_secs),
+        std::time::Duration::from_secs(config.health.timeout_secs),
+        config.health.path.clone(),
+    );
+
+    let balancer = Arc::new(balancer::Balancer::new(
+        config.upstream_socket_addrs(),
+        Arc::clone(&flags),
+    ));
+
+    let listener = tokio::net::TcpListener::bind(config.listen_socket_addr())
+        .await
+        .with_context(|| format!("failed to bind to {}", config.listen_addr))?;
+
+    info!(
+        addr = %config.listen_addr,
+        upstreams = balancer.len(),
+        "HTTPS proxy listening"
+    );
+
+    let active = Arc::new(AtomicUsize::new(0));
+
+    loop {
+        tokio::select! {
+            result = listener.accept() => {
+                let (tcp, addr) = result.context("failed to accept connection")?;
+                let config   = Arc::clone(&config);
+                let acceptor = Arc::clone(&acceptor);
+                let balancer = Arc::clone(&balancer);
+                let active   = Arc::clone(&active);
+
+                let count = active.fetch_add(1, Ordering::Relaxed) + 1;
+                info!(client = %addr, active = count, "[NEW]");
+
+                tokio::spawn(async move {
+                    if let Err(e) =
+                        proxy::handle_connection(tcp, acceptor, config, balancer).await
+                    {
+                        error!(client = %addr, error = %e, "connection error");
+                    }
+                    let count = active.fetch_sub(1, Ordering::Relaxed) - 1;
+                    info!(client = %addr, active = count, "[DONE]");
+                });
+            }
+            _ = shutdown_signal() => {
+                info!("shutdown signal received — stopping");
+                break;
+            }
+        }
+    }
+
+    info!("proxy stopped");
+    Ok(())
+}
