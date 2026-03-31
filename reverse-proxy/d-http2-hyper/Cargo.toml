@@ -2,3 +2,20 @@
 name = "d-http2-hyper"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+tokio              = { version = "1", features = ["full"] }
+hyper              = { version = "1", features = ["http1", "http2", "server", "client"] }
+hyper-util         = { version = "0.1", features = ["tokio"] }
+http-body-util     = "0.1"
+bytes              = "1"
+tokio-rustls       = "0.26"
+rustls             = { version = "0.23", features = ["ring"] }
+rustls-pemfile     = "2"
+rcgen              = "0.13"
+serde              = { version = "1", features = ["derive"] }
+toml               = "0.8"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow             = "1"
+uuid               = { version = "1", features = ["v4", "fast-rng"] }

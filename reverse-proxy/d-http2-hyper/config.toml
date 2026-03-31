@@ -1,8 +1,7 @@
-listen_addr    = "0.0.0.0:8444"
+listen_addr    = "0.0.0.0:8443"
 upstream_addrs = ["127.0.0.1:9091", "127.0.0.1:9092"]
 
 [tls]
-# Leave both blank to auto-generate a self-signed dev cert at startup
 cert_path = ""
 key_path  = ""
 
