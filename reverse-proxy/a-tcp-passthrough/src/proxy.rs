@@ -6,16 +6,27 @@ use tracing::info;
 use crate::config::Config;
 
 pub async fn handle_connection(mut client: TcpStream, config: Arc<Config>) -> Result<()> {
+    use std::time::Duration;
+    use tokio::time::timeout;
+
     let client_addr = client
         .peer_addr()
         .context("failed to get client peer address")?;
 
-    // Connect to upstream.
-    // If this fails, the error propagates up — the spawned task logs it and exits.
-    // Every other connection is unaffected.
-    let mut upstream = TcpStream::connect(config.upstream_socket_addr())
-        .await
-        .with_context(|| format!("failed to connect to upstream {}", config.upstream_addr))?;
+    // Timeout on connect — if upstream doesn't accept within connect_timeout_secs, error out.
+    let connect_timeout = Duration::from_secs(config.timeouts.connect_timeout_secs);
+    let mut upstream = timeout(
+        connect_timeout,
+        TcpStream::connect(config.upstream_socket_addr()),
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "timed out connecting to upstream {} after {}s",
+            config.upstream_addr, config.timeouts.connect_timeout_secs
+        )
+    })?
+    .with_context(|| format!("failed to connect to upstream {}", config.upstream_addr))?;
 
     info!(
         client = %client_addr,
@@ -23,15 +34,20 @@ pub async fn handle_connection(mut client: TcpStream, config: Arc<Config>) -> Re
         "[NEW] connection"
     );
 
-    // copy_bidirectional runs two copy loops concurrently inside a single task:
-    //   loop 1: client.read → upstream.write
-    //   loop 2: upstream.read → client.write
-    //
-    // It returns when EITHER side closes the connection (reads 0 bytes).
-    // At that point it shuts down the write half of the other side — clean teardown.
-    tokio::io::copy_bidirectional(&mut client, &mut upstream)
-        .await
-        .context("error during bidirectional copy")?;
+    // Timeout on transfer — kill connections that are idle/hung too long.
+    let transfer_timeout = Duration::from_secs(config.timeouts.transfer_timeout_secs);
+    timeout(
+        transfer_timeout,
+        tokio::io::copy_bidirectional(&mut client, &mut upstream),
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "transfer timed out after {}s for client {}",
+            config.timeouts.transfer_timeout_secs, client_addr
+        )
+    })?
+    .context("error during bidirectional copy")?;
 
     info!(client = %client_addr, "[CLOSED] connection");
     Ok(())
@@ -89,6 +105,54 @@ mod tests {
             .unwrap();
 
         client_task.await.unwrap();
+    }
+
+    /// Verifies the transfer timeout kills a connection that hangs idle.
+    ///
+    /// Without the timeout wrapper this test takes ~30 seconds (the upstream holds
+    /// the connection open). With the timeout wrapper it finishes in ~1 second.
+    #[tokio::test]
+    async fn test_transfer_timeout_kills_idle_connection() {
+        use std::time::{Duration, Instant};
+
+        // Upstream accepts but never sends data — simulates a hung backend.
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let (_conn, _) = upstream_listener.accept().await.unwrap();
+            // Hold open for 30s — proxy must timeout long before this.
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        });
+
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = proxy_listener.local_addr().unwrap();
+        let _client = tokio::spawn(async move {
+            let _c = TcpStream::connect(proxy_addr).await.unwrap();
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        });
+
+        let config = Arc::new(Config {
+            listen_addr: "127.0.0.1:0".to_string(),
+            upstream_addr,
+            timeouts: Timeouts {
+                connect_timeout_secs: 5,
+                transfer_timeout_secs: 1, // 1 second transfer timeout
+            },
+        });
+
+        let (client_stream, _) = proxy_listener.accept().await.unwrap();
+        let start = Instant::now();
+        let result = handle_connection(client_stream, config).await;
+
+        assert!(result.is_err(), "expected timeout error");
+        assert!(
+            start.elapsed() >= Duration::from_millis(900),
+            "finished too fast — timeout may not have fired"
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(3),
+            "took too long — timeout may not be wired up"
+        );
     }
 
     /// Verifies handle_connection returns an error (doesn't panic) when upstream is down.

@@ -1,55 +1,81 @@
-//! Level 2 — Concurrent TCP passthrough.
+//! Level 3 — Production grade TCP passthrough.
 //!
-//! Config loaded from config.toml.
-//! Each connection is handled in its own Tokio task (the go func() equivalent).
-//! copy_bidirectional replaces the naive manual loop from Level 1.
+//! Adds: connect/transfer timeouts, graceful CTRL+C shutdown,
+//! active connection counter, structured logging with env-filter.
 
 mod config;
 mod proxy;
 
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 use anyhow::{Context, Result};
 use tracing::{error, info};
 
+/// Resolves when CTRL+C is received.
+async fn shutdown_signal() {
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install CTRL+C signal handler");
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize structured logging. RUST_LOG=info controls the verbosity.
-    // Try: RUST_LOG=debug cargo run  for more detail.
-    tracing_subscriber::fmt().init();
+    // env-filter reads RUST_LOG at startup.
+    // Example: RUST_LOG=a_tcp_passthrough=debug cargo run
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("a_tcp_passthrough=info".parse().unwrap()),
+        )
+        .init();
 
-    // Load and validate config. Fails fast with a clear error if anything is wrong.
     let config = Arc::new(
         config::Config::load("config.toml").context("failed to load config.toml")?,
     );
 
-    // Bind the listener.
     let listener = tokio::net::TcpListener::bind(config.listen_socket_addr())
         .await
         .with_context(|| format!("failed to bind to {}", config.listen_addr))?;
 
     info!(addr = %config.listen_addr, "proxy listening");
 
-    // The accept loop. This runs forever — the main task never does real work,
-    // it only hands connections off to spawned tasks.
+    // Shared atomic counter — no Mutex needed for a simple increment/decrement.
+    // Arc lets us clone a reference cheaply into each spawned task.
+    let active = Arc::new(AtomicUsize::new(0));
+
     loop {
-        // .await here yields until a client connects.
-        let (client, addr) = listener
-            .accept()
-            .await
-            .context("failed to accept connection")?;
+        tokio::select! {
+            // Branch 1: a new client connection arrived.
+            result = listener.accept() => {
+                let (client, addr) = result.context("failed to accept connection")?;
+                let config = Arc::clone(&config);
+                let active = Arc::clone(&active);
 
-        // Clone the Arc — cheap: just bumps a reference count.
-        // Each task owns one reference to the same Config on the heap.
-        let config = Arc::clone(&config);
+                // Increment before spawn so the count is accurate immediately.
+                let count = active.fetch_add(1, Ordering::Relaxed) + 1;
+                info!(client = %addr, active = count, "[NEW] connection");
 
-        // tokio::spawn creates a new async task on the Tokio thread pool.
-        // This is non-blocking — we return to the accept loop immediately.
-        // Go equivalent: go handleConnection(conn, config)
-        tokio::spawn(async move {
-            if let Err(e) = proxy::handle_connection(client, config).await {
-                error!(client = %addr, error = %e, "connection error");
+                tokio::spawn(async move {
+                    if let Err(e) = proxy::handle_connection(client, config).await {
+                        error!(client = %addr, error = %e, "connection error");
+                    }
+                    // fetch_sub returns the value BEFORE subtracting, so subtract 1 for current.
+                    let count = active.fetch_sub(1, Ordering::Relaxed) - 1;
+                    info!(client = %addr, active = count, "[DONE] connection");
+                });
             }
-        });
+
+            // Branch 2: CTRL+C received — stop accepting, let existing tasks finish.
+            _ = shutdown_signal() => {
+                info!("shutdown signal received — stopping");
+                break;
+            }
+        }
     }
+
+    info!("proxy stopped");
+    Ok(())
 }
