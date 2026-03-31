@@ -1,70 +1,55 @@
-//! Level 1 — Bare bones TCP passthrough.
+//! Level 2 — Concurrent TCP passthrough.
 //!
-//! Hardcoded addresses. Accepts ONE connection then exits.
-//! Manual read/write loop that can only move bytes in one direction at a time.
-//! This is intentionally incomplete — it exists to show every line of the data path.
+//! Config loaded from config.toml.
+//! Each connection is handled in its own Tokio task (the go func() equivalent).
+//! copy_bidirectional replaces the naive manual loop from Level 1.
 
 mod config;
+mod proxy;
 
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 
-// Hardcoded for Level 1. Level 2 will load these from config.toml.
-const LISTEN_ADDR: &str = "127.0.0.1:8080";
-const UPSTREAM_ADDR: &str = "127.0.0.1:9090";
+use anyhow::{Context, Result};
+use tracing::{error, info};
 
 #[tokio::main]
-async fn main() {
-    // Bind a TCP listener to our address.
-    // Think of this as: open a door and wait for someone to knock.
-    let listener = TcpListener::bind(LISTEN_ADDR).await.unwrap();
-    println!("Listening on {LISTEN_ADDR}");
+async fn main() -> Result<()> {
+    // Initialize structured logging. RUST_LOG=info controls the verbosity.
+    // Try: RUST_LOG=debug cargo run  for more detail.
+    tracing_subscriber::fmt().init();
 
-    // .await here yields to the Tokio executor until a client connects.
-    // In Go this would be: conn, _ := listener.Accept()
-    // The difference: Go's runtime parks the goroutine invisibly.
-    // Tokio requires the explicit .await — same outcome, visible mechanism.
-    let (mut client, client_addr) = listener.accept().await.unwrap();
-    println!("Client connected: {client_addr}");
+    // Load and validate config. Fails fast with a clear error if anything is wrong.
+    let config = Arc::new(
+        config::Config::load("config.toml").context("failed to load config.toml")?,
+    );
 
-    // Connect to the upstream server.
-    // .await again — yields until the TCP handshake completes.
-    let mut upstream = TcpStream::connect(UPSTREAM_ADDR).await.unwrap();
-    println!("Connected to upstream: {UPSTREAM_ADDR}");
+    // Bind the listener.
+    let listener = tokio::net::TcpListener::bind(config.listen_socket_addr())
+        .await
+        .with_context(|| format!("failed to bind to {}", config.listen_addr))?;
 
-    // A 4KB buffer on the stack. We reuse it every iteration.
-    let mut buf = [0u8; 4096];
+    info!(addr = %config.listen_addr, "proxy listening");
 
-    // THE INTENTIONALLY NAIVE LOOP.
-    //
-    // Problem: this loop handles one direction per iteration.
-    // Step 1: wait for client to send bytes → forward to upstream.
-    // Step 2: wait for upstream to send bytes → forward to client.
-    //
-    // If upstream sends data WHILE we are blocked at step 1,
-    // that data sits in the kernel receive buffer unread.
-    // For simple request/response protocols (like HTTP) this can work.
-    // For bidirectional protocols (like raw TCP piping) it breaks.
-    // Level 2 fixes this with copy_bidirectional.
+    // The accept loop. This runs forever — the main task never does real work,
+    // it only hands connections off to spawned tasks.
     loop {
-        // Read from client. Returns 0 bytes when client closes the connection.
-        let n = client.read(&mut buf).await.unwrap();
-        if n == 0 {
-            println!("Client closed connection");
-            break;
-        }
-        println!("client→upstream: {n} bytes");
-        upstream.write_all(&buf[..n]).await.unwrap();
+        // .await here yields until a client connects.
+        let (client, addr) = listener
+            .accept()
+            .await
+            .context("failed to accept connection")?;
 
-        // Read from upstream.
-        let n = upstream.read(&mut buf).await.unwrap();
-        if n == 0 {
-            println!("Upstream closed connection");
-            break;
-        }
-        println!("upstream→client: {n} bytes");
-        client.write_all(&buf[..n]).await.unwrap();
+        // Clone the Arc — cheap: just bumps a reference count.
+        // Each task owns one reference to the same Config on the heap.
+        let config = Arc::clone(&config);
+
+        // tokio::spawn creates a new async task on the Tokio thread pool.
+        // This is non-blocking — we return to the accept loop immediately.
+        // Go equivalent: go handleConnection(conn, config)
+        tokio::spawn(async move {
+            if let Err(e) = proxy::handle_connection(client, config).await {
+                error!(client = %addr, error = %e, "connection error");
+            }
+        });
     }
-
-    println!("Done");
 }
