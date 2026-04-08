@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tokio &amp; Async Rust — From Futures to TCP Proxies</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-light: #eff6ff;
+    --accent-border: #bfdbfe;
+    --code-bg: #f8f9fa;
+    --code-border: #2563eb;
+    --terminal-bg: #0f172a;
+    --terminal-text: #e2e8f0;
+    --table-alt: #f8f9fa;
+    --border: #e5e7eb;
+    --nav-bg: #ffffffee;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 16px;
+  }
+
+  /* ---- NAV ---- */
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--nav-bg);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+  }
+  nav ul {
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+  nav ul li a {
+    display: block;
+    padding: 12px 10px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+  nav ul li a:hover { color: var(--accent); }
+
+  /* ---- LAYOUT ---- */
+  .container {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  /* ---- HEADINGS ---- */
+  h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+  .subtitle {
+    font-size: 1.1rem;
+    color: var(--muted);
+    margin-bottom: 48px;
+    max-width: 640px;
+  }
+
+  h2 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 56px 0 20px;
+    padding-left: 16px;
+    border-left: 4px solid var(--accent);
+    line-height: 1.3;
+  }
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text);
+    margin: 32px 0 12px;
+  }
+  h4 {
+    font-weight: 600;
+    color: var(--accent);
+    margin: 24px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 0.8rem;
+  }
+
+  p { margin-bottom: 16px; }
+  ul, ol { margin: 0 0 16px 24px; }
+  li { margin-bottom: 6px; }
+
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ---- CODE ---- */
+  code {
+    font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, "Courier New", monospace;
+    font-size: 0.87em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 6px;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border-left: 3px solid var(--code-border);
+    border-radius: 6px;
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin: 20px 0;
+    font-size: 0.85rem;
+    line-height: 1.6;
+  }
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+    color: var(--text);
+  }
+
+  /* Terminal / output blocks */
+  pre.terminal {
+    background: var(--terminal-bg);
+    border-left: 3px solid #475569;
+  }
+  pre.terminal code {
+    color: var(--terminal-text);
+  }
+
+  /* ASCII art */
+  pre.ascii {
+    background: var(--code-bg);
+    border-left: 3px solid var(--accent);
+    color: var(--text);
+    font-size: 0.85rem;
+  }
+
+  /* ---- CALLOUT ---- */
+  .callout {
+    background: var(--accent-light);
+    border-left: 4px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 16px 20px;
+    margin: 24px 0;
+  }
+  .callout strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--accent);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .callout-warn {
+    background: #fff7ed;
+    border-left-color: #f97316;
+  }
+  .callout-warn strong { color: #c2410c; }
+
+  .callout-green {
+    background: #f0fdf4;
+    border-left-color: #22c55e;
+  }
+  .callout-green strong { color: #15803d; }
+
+  /* ---- TABLE ---- */
+  .table-wrap { overflow-x: auto; margin: 24px 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+  th {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text);
+  }
+  td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: var(--table-alt); }
+
+  /* ---- SECTION DIVIDER ---- */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 48px 0;
+  }
+
+  /* ---- BADGE ---- */
+  .badge {
+    display: inline-block;
+    background: var(--accent-light);
+    color: var(--accent);
+    border: 1px solid var(--accent-border);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 10px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* ---- HERO ---- */
+  .hero {
+    background: linear-gradient(135deg, #eff6ff 0%, #fdf4ff 100%);
+    border: 1px solid var(--accent-border);
+    border-radius: 12px;
+    padding: 36px 40px;
+    margin-bottom: 48px;
+  }
+  .hero h1 { margin-bottom: 12px; }
+
+  /* ---- EXAMPLE HEADER ---- */
+  .example-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .example-label {
+    background: var(--accent);
+    color: white;
+    font-weight: 700;
+    font-size: 1.1rem;
+    border-radius: 8px;
+    padding: 6px 16px;
+    flex-shrink: 0;
+  }
+
+  /* ---- LIMITATION BOX ---- */
+  .limitation {
+    background: #fef2f2;
+    border-left: 4px solid #ef4444;
+    border-radius: 0 6px 6px 0;
+    padding: 16px 20px;
+    margin: 24px 0;
+  }
+  .limitation strong {
+    display: block;
+    color: #b91c1c;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    .container { padding: 24px 16px 64px; }
+    h1 { font-size: 1.8rem; }
+    h2 { font-size: 1.3rem; }
+    pre { padding: 14px 16px; font-size: 0.78rem; }
+    nav ul li a { font-size: 12px; padding: 10px 7px; }
+    .hero { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <ul>
+    <li><a href="#why-tokio">Why Tokio</a></li>
+    <li><a href="#futures">Futures</a></li>
+    <li><a href="#pin">Pin</a></li>
+    <li><a href="#runtime">Runtime</a></li>
+    <li><a href="#async-io">Async I/O</a></li>
+    <li><a href="#tokio-copy">tokio::io::copy</a></li>
+    <li><a href="#connecting-dots">Connecting the Dots</a></li>
+    <li><a href="#exercises">Exercises</a></li>
+  </ul>
+</nav>
+
+<div class="container">
+
+  <div class="hero">
+    <h1>Tokio &amp; Async Rust</h1>
+    <p class="subtitle">From raw Futures to TCP proxies &mdash; understand the low-level network programming layer before building on it.</p>
+    <p style="color: var(--muted); font-size:0.9rem;">This guide covers five topics in order: what a Future is, why Pin exists, how Tokio's runtime schedules tasks, how async I/O avoids blocking threads, and how <code>tokio::io::copy</code> powers your TCP proxy. Each section has runnable code examples.</p>
+  </div>
+
+  <!-- ================================================================ -->
+  <h2 id="why-tokio">1. Why Study Tokio Before Building a Proxy</h2>
+  <!-- ================================================================ -->
+
+  <p>A reverse proxy spends almost all of its time doing two things: <strong>waiting for bytes to arrive</strong> and <strong>forwarding bytes to the next hop</strong>. If you use one OS thread per connection, you burn megabytes of stack memory per connection. At 10,000 connections, that is tens of gigabytes just for stacks &mdash; and most of those threads are idle, waiting on the network.</p>
+
+  <p>Tokio solves this with async I/O. Instead of one thread per connection, you get one <strong>task</strong> per connection &mdash; a tiny state machine that costs a few hundred bytes. A handful of OS threads can drive hundreds of thousands of tasks. Understanding how this works at the <code>poll()</code> level is what makes the proxy code readable, not magical.</p>
+
+  <div class="callout">
+    <strong>The goal</strong>
+    By the end of this guide, when you see <code>tokio::io::copy(&amp;mut client, &amp;mut upstream).await</code> in the proxy, you should be able to explain exactly what happens &mdash; from the <code>.await</code> keyword down to the OS event loop.
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="futures">2. Futures &amp; Polling</h2>
+  <!-- ================================================================ -->
+
+  <h3>What is a Future?</h3>
+
+  <p>A <code>Future</code> is a value that represents a computation that hasn't completed yet. In Rust, it is a trait with a single method:</p>
+
+<pre><code>trait Future {
+    type Output;
+    fn poll(self: Pin&lt;&amp;mut Self&gt;, cx: &amp;mut Context&lt;'_&gt;) -&gt; Poll&lt;Self::Output&gt;;
+}
+
+enum Poll&lt;T&gt; {
+    Ready(T),   // done, here's the value
+    Pending,    // not done yet, call me later
+}</code></pre>
+
+  <p>That is the entire interface. There are no callbacks, no event emitters, no promises with <code>.then()</code> chains. A Future is a thing you call <code>poll()</code> on, and it either gives you a value or says "not yet."</p>
+
+  <h3>How .await works</h3>
+
+  <p>When you write <code>let x = some_future.await;</code>, the compiler generates code that does roughly this:</p>
+
+<pre><code>loop {
+    match some_future.poll(cx) {
+        Poll::Ready(value) =&gt; break value,
+        Poll::Pending =&gt; {
+            // yield control back to the runtime
+            // runtime will call poll() again when waker fires
+            return Poll::Pending;
+        }
+    }
+}</code></pre>
+
+  <p>The crucial detail: <strong>the current function also returns <code>Pending</code></strong>. This is how suspension propagates up the call stack. Each <code>.await</code> is a potential suspension point where the runtime can park this task and go run something else.</p>
+
+  <h3>The Waker</h3>
+
+  <p>The <code>cx</code> parameter contains a <strong>Waker</strong> &mdash; a handle that the future uses to tell the runtime "I'm ready to be polled again." Without calling the waker, the runtime has no reason to poll the future again, and it will sit there forever.</p>
+
+  <p>For I/O futures (like reading from a socket), the waker is hooked up to the OS event system. When bytes arrive on the socket, the OS notifies Tokio, Tokio calls the waker, and the waker re-schedules the task for polling. No busy-waiting, no spin loops, no wasted CPU.</p>
+
+<pre class="ascii">    Your code              Tokio runtime             OS (epoll/IOCP)
+    ─────────              ─────────────             ───────────────
+    stream.read().await
+         │
+         ▼
+    poll() → Pending       registers waker           socket registered
+         │                      │
+         ▼                      │
+    (task parked)               │
+                                │                    data arrives!
+                                │◄────────────────── epoll_wait returns
+                                │
+                           waker.wake()
+                                │
+                                ▼
+                           re-polls task
+                                │
+                                ▼
+                        poll() → Ready(bytes)
+                                │
+                                ▼
+                        task continues</pre>
+
+  <h3>Building a custom Future</h3>
+
+  <p>To make this concrete, here is a complete Future that counts down from N to 0:</p>
+
+<pre><code>struct Countdown {
+    remaining: u32,
+}
+
+impl Future for Countdown {
+    type Output = &amp;'static str;
+
+    fn poll(mut self: Pin&lt;&amp;mut Self&gt;, cx: &amp;mut Context&lt;'_&gt;) -&gt; Poll&lt;Self::Output&gt; {
+        if self.remaining == 0 {
+            Poll::Ready("done!")
+        } else {
+            println!("remaining: {}", self.remaining);
+            self.remaining -= 1;
+            cx.waker().wake_by_ref();  // tell runtime to poll us again
+            Poll::Pending
+        }
+    }
+}</code></pre>
+
+  <p>When you <code>.await</code> this, Tokio calls <code>poll()</code> four times (for a countdown from 3): three times it returns <code>Pending</code> and decrements, and the fourth time it returns <code>Ready("done!")</code>. Each time it returns <code>Pending</code>, it calls <code>wake_by_ref()</code> to ensure the runtime polls it again immediately.</p>
+
+  <div class="callout callout-warn">
+    <strong>What happens without wake()?</strong>
+    If you return <code>Poll::Pending</code> without calling the waker, the runtime assumes the future is waiting for some external event. It will never poll again. Your future is stuck forever. This is the most common bug when implementing custom futures.
+  </div>
+
+  <h4>Run it</h4>
+<pre class="terminal"><code>$ cargo run --example 01_custom_future
+
+=== Custom Future: Countdown ===
+
+  [poll] remaining=3 → returning Poll::Pending
+  [poll] remaining=2 → returning Poll::Pending
+  [poll] remaining=1 → returning Poll::Pending
+  [poll] remaining=0 → returning Poll::Ready
+
+Result: done!</code></pre>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="pin">3. Pin &amp; the Self-Referential Struct Problem</h2>
+  <!-- ================================================================ -->
+
+  <p>This section explains the tweet from Debasish Ghosh: <em>"A &amp;mut borrow alive at .await would require storing a pointer into the future itself &mdash; self-referential struct &mdash; unsound if moved."</em></p>
+
+  <h3>What async fn compiles to</h3>
+
+  <p>An <code>async fn</code> is syntactic sugar. The compiler transforms it into a state machine &mdash; an <code>enum</code> where each variant holds the local variables alive at that suspension point.</p>
+
+<pre><code>// What you write:
+async fn example(data: &amp;mut Vec&lt;u8&gt;) {
+    let slice = &amp;data[..];          // borrows data
+    tokio::time::sleep(...).await;   // suspension point!
+    println!("{:?}", slice);         // uses borrow after .await
+}
+
+// What the compiler generates (simplified):
+enum ExampleFuture&lt;'a&gt; {
+    State0 { data: &amp;'a mut Vec&lt;u8&gt; },
+    State1 { data: &amp;'a mut Vec&lt;u8&gt;, slice: &amp;'a [u8] },
+    //                               ^^^^^^^^^^^^^^^^
+    //        slice points into data — SELF-REFERENTIAL!
+    Done,
+}</code></pre>
+
+  <p>In <code>State1</code>, <code>slice</code> is a reference to the contents of <code>data</code>. Both are fields of the same struct. That makes the struct <strong>self-referential</strong> &mdash; it contains a pointer to its own memory.</p>
+
+  <h3>Why moving breaks self-referential structs</h3>
+
+<pre class="ascii">Before move:                          After move:
+┌──────────────────────┐              ┌──────────────────────┐
+│ addr: 0x1000         │              │ addr: 0x2000         │
+│ data: "hello"        │              │ data: "hello"        │
+│ slice: ptr → 0x1000  │──────╮       │ slice: ptr → 0x1000  │──╮
+└──────────────────────┘      │       └──────────────────────┘  │
+                              │                                  │
+                              ▼                                  ▼
+                         data (valid)                       0x1000 (FREED!)
+                                                            dangling pointer!</pre>
+
+  <p>When the struct moves from address <code>0x1000</code> to <code>0x2000</code>, the <code>data</code> field moves with it. But <code>slice</code> still points at <code>0x1000</code> &mdash; the old address. That memory may now be freed or reused. Dereferencing <code>slice</code> is undefined behavior.</p>
+
+  <h3>How Pin solves this</h3>
+
+  <p><code>Pin&lt;&amp;mut T&gt;</code> is a wrapper around a mutable reference that <strong>removes the ability to move <code>T</code></strong>. Once a value is pinned, you can never get a plain <code>&amp;mut T</code> to it (unless <code>T: Unpin</code>), which means you can never call <code>std::mem::swap</code> or <code>std::mem::replace</code> on it. The value stays put. Self-references remain valid.</p>
+
+  <p>This is why <code>Future::poll</code> takes <code>Pin&lt;&amp;mut Self&gt;</code> instead of <code>&amp;mut self</code>. It guarantees that between polls, the future doesn't move. The compiler-generated self-referential state machine is safe.</p>
+
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Type</th>
+        <th>Unpin?</th>
+        <th>Pin effect</th>
+      </tr>
+      <tr>
+        <td><code>u32</code>, <code>String</code>, <code>Vec</code></td>
+        <td>Yes (implements <code>Unpin</code>)</td>
+        <td>Pin is a no-op. You can still get <code>&amp;mut</code> freely.</td>
+      </tr>
+      <tr>
+        <td>Most <code>async</code> blocks / <code>async fn</code> futures</td>
+        <td>No (<code>!Unpin</code>)</td>
+        <td>Pin prevents <code>&amp;mut</code> access. Cannot be moved. Self-references are safe.</td>
+      </tr>
+    </table>
+  </div>
+
+  <h3>How to pin values in practice</h3>
+
+<pre><code>// Heap-pinned (common with spawn, trait objects):
+let future = Box::pin(async { ... });
+// Type: Pin&lt;Box&lt;dyn Future&lt;Output = T&gt;&gt;&gt;
+
+// Stack-pinned (common inside async fn):
+tokio::pin!(future);
+// Type: Pin&lt;&amp;mut impl Future&lt;Output = T&gt;&gt;
+
+// tokio::spawn handles pinning internally — you rarely need to think about it:
+tokio::spawn(async move { ... });  // future is pinned inside the task</code></pre>
+
+  <div class="callout">
+    <strong>The one-sentence summary</strong>
+    <code>Pin</code> exists because async functions compile to self-referential structs, and self-referential structs break if moved. <code>Pin</code> prevents the move.
+  </div>
+
+  <h4>Run it</h4>
+<pre class="terminal"><code>$ cargo run --example 02_pin_demo
+
+=== Pin: Why It Exists ===
+
+--- Part 1: The Move Problem ---
+  Before move: data is at 0x7ff...a0
+  ptr points to:          0x7ff...a0
+  After move:  data is at 0x7ff...b0
+  ptr STILL points to:    0x7ff...a0 ← DANGLING!
+
+--- Part 2: What async fn Compiles To ---
+  async fn with a borrow across .await creates a self-referential future.
+  Pin&lt;&amp;mut Self&gt; in poll() guarantees the future won't move after first poll.
+
+--- Part 3: Pin Basics ---
+  Unpin type (u32): Pin lets you get &amp;mut back — no restriction.
+  !Unpin type (most futures): Pin blocks &amp;mut access.</code></pre>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="runtime">4. Tokio Runtime &amp; Task Spawning</h2>
+  <!-- ================================================================ -->
+
+  <h3>What the runtime does</h3>
+
+  <p>When you write <code>#[tokio::main]</code>, it creates a <strong>multi-threaded runtime</strong> with a work-stealing scheduler. Here is what that means:</p>
+
+  <ol>
+    <li><strong>Thread pool</strong> &mdash; Tokio starts N worker threads (default: one per CPU core). Each thread has a local task queue.</li>
+    <li><strong>Task scheduling</strong> &mdash; When you call <code>tokio::spawn()</code>, the future is wrapped in a task and placed on a worker's queue. When a task yields (hits <code>.await</code> and returns <code>Pending</code>), the worker picks up the next task from its queue.</li>
+    <li><strong>Work stealing</strong> &mdash; If a worker's queue is empty, it steals tasks from another worker's queue. This keeps all cores busy without manual load balancing.</li>
+    <li><strong>I/O driver</strong> &mdash; A separate component registers sockets with the OS event system. When data arrives, the driver wakes the corresponding task.</li>
+  </ol>
+
+<pre class="ascii">                     Tokio Runtime
+    ┌──────────────────────────────────────────┐
+    │                                          │
+    │   Worker Thread 1    Worker Thread 2     │
+    │   ┌────────────┐     ┌────────────┐      │
+    │   │ Task A      │     │ Task C      │     │
+    │   │ Task B      │     │ (idle)      │◄──steal──┐
+    │   └────────────┘     └────────────┘      │     │
+    │         │                   │             │     │
+    │         └───────┬───────────┘             │     │
+    │                 │                        │     │
+    │           I/O Driver                     │     │
+    │           (epoll / IOCP)                 │     │
+    │                 │                        │     │
+    └─────────────────│────────────────────────┘     │
+                      │                              │
+                  OS kernel ── socket ready ──► wake task
+</pre>
+
+  <h3>spawn() requires <code>'static + Send</code></h3>
+
+  <p>When you call <code>tokio::spawn(future)</code>, two constraints apply:</p>
+
+  <ul>
+    <li><strong><code>'static</code></strong> &mdash; The future must own all its data. It cannot borrow from the current scope, because the spawned task may outlive the scope that created it. Fix: use <code>move</code> closures and <code>.clone()</code> where needed.</li>
+    <li><strong><code>Send</code></strong> &mdash; The future must be safe to send between threads, because the work-stealing scheduler may move it from one thread to another. This rules out <code>Rc</code> (use <code>Arc</code>), <code>Cell</code>/<code>RefCell</code> (use <code>Mutex</code>), and raw pointers.</li>
+  </ul>
+
+<pre><code>// This compiles — String is 'static + Send, and `move` transfers ownership:
+let name = String::from("proxy-task");
+tokio::spawn(async move {
+    println!("running: {name}");
+});
+
+// This does NOT compile — borrows `name`, not 'static:
+// tokio::spawn(async {
+//     println!("running: {name}");  // ERROR: name is borrowed, not moved
+// });
+
+// This does NOT compile — Rc is not Send:
+// let rc = std::rc::Rc::new(42);
+// tokio::spawn(async move {
+//     println!("{rc}");  // ERROR: Rc&lt;i32&gt; cannot be sent between threads
+// });</code></pre>
+
+  <h3>Sequential vs. concurrent execution</h3>
+
+<pre><code>// Sequential: 200ms + 200ms = ~400ms total
+let a = do_work("A", 200).await;
+let b = do_work("B", 200).await;
+
+// Concurrent with spawn: max(200ms, 200ms) = ~200ms total
+let handle_a = tokio::spawn(do_work("A", 200));
+let handle_b = tokio::spawn(do_work("B", 200));
+let a = handle_a.await.unwrap();
+let b = handle_b.await.unwrap();
+
+// Concurrent with join! (no spawn, same task, still concurrent):
+let (a, b) = tokio::join!(
+    do_work("A", 200),
+    do_work("B", 200),
+);</code></pre>
+
+  <div class="callout">
+    <strong>spawn vs. join!</strong>
+    <code>tokio::spawn</code> creates a new task that runs independently on any thread. <code>tokio::join!</code> runs multiple futures concurrently <em>within the same task</em>. Use <code>spawn</code> when you want true parallelism across cores; use <code>join!</code> when you just want to overlap I/O waits.
+  </div>
+
+  <h3>JoinHandle &amp; error handling</h3>
+
+  <p>A spawned task returns a <code>JoinHandle&lt;T&gt;</code>. Awaiting it gives you <code>Result&lt;T, JoinError&gt;</code>. If the task panics, the panic is caught and returned as <code>JoinError</code> &mdash; it does not crash the runtime. This is different from std threads, where a panic in one thread can sometimes propagate.</p>
+
+<pre><code>let handle = tokio::spawn(async { 42 });
+match handle.await {
+    Ok(value) =&gt; println!("got {value}"),
+    Err(e) =&gt; println!("task panicked: {e}"),
+}
+
+// Abort a long-running task:
+handle.abort();</code></pre>
+
+  <h4>Run it</h4>
+<pre class="terminal"><code>$ cargo run --example 03_tokio_spawn
+
+=== Tokio Runtime &amp; Spawning ===
+
+--- Part 1: Sequential vs Concurrent ---
+  Sequential: A-seq(200ms) + B-seq(200ms) took 401.2ms
+  Concurrent: A-conc(200ms) + B-conc(200ms) took 201.5ms
+  Join macro: A-join(200ms) + B-join(200ms) took 200.8ms</code></pre>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="async-io">5. Async I/O &mdash; TcpListener &amp; Non-Blocking Sockets</h2>
+  <!-- ================================================================ -->
+
+  <h3>What happens when you call <code>TcpListener::bind().await</code></h3>
+
+  <p>Under the hood, Tokio does four things:</p>
+
+  <ol>
+    <li><strong>Creates a socket</strong> &mdash; calls the OS to allocate a new TCP socket.</li>
+    <li><strong>Sets it non-blocking</strong> &mdash; tells the OS to return immediately if no data is available, instead of blocking the thread.</li>
+    <li><strong>Binds to the address</strong> &mdash; associates the socket with a local IP and port.</li>
+    <li><strong>Registers with the I/O driver</strong> &mdash; Tokio registers the socket with the OS event system (IOCP on Windows, epoll on Linux). The driver will notify Tokio when the socket has events (new connections, data ready, etc.).</li>
+  </ol>
+
+  <h3>The accept loop</h3>
+
+<pre><code>let listener = TcpListener::bind("127.0.0.1:3456").await?;
+
+loop {
+    // .await here SUSPENDS this task — the thread is free to do other work.
+    // When a client connects, IOCP/epoll fires, the waker runs, and
+    // this task resumes with the new socket.
+    let (socket, addr) = listener.accept().await?;
+
+    // Spawn a task per connection — costs ~200 bytes, not megabytes.
+    tokio::spawn(async move {
+        handle_connection(socket, addr).await;
+    });
+}</code></pre>
+
+  <p>The key insight: <strong><code>listener.accept().await</code> does not block a thread</strong>. The task suspends, the thread picks up another task, and the OS wakes this task when a connection arrives. One thread can serve thousands of listening sockets.</p>
+
+  <h3>AsyncRead and AsyncWrite</h3>
+
+  <p><code>AsyncRead</code> and <code>AsyncWrite</code> are the async equivalents of <code>std::io::Read</code> and <code>std::io::Write</code>. They work the same way &mdash; but instead of blocking the thread when no data is available, they return <code>Poll::Pending</code> and let the runtime do other work.</p>
+
+<pre><code>use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+// Read bytes from a socket (suspends if no data yet):
+let n = socket.read(&amp;mut buf).await?;
+
+// Write bytes to a socket (suspends if write buffer is full):
+socket.write_all(response.as_bytes()).await?;
+
+// Shut down the write half — signals EOF to the peer:
+socket.shutdown().await?;</code></pre>
+
+  <div class="callout callout-warn">
+    <strong>read() returns 0 = EOF</strong>
+    When <code>read()</code> returns <code>Ok(0)</code>, the peer has closed their side of the connection. You must check for this! If you keep reading after EOF, you get an infinite loop of zero-byte reads. This is a common bug in network code.
+  </div>
+
+  <h4>Run it</h4>
+<pre class="terminal"><code>$ cargo run --example 04_async_io
+Listening on 127.0.0.1:3456
+Test with: curl http://127.0.0.1:3456
+
+# In another terminal:
+$ curl http://127.0.0.1:3456
+Echo: GET / HTTP/1.1
+Host: 127.0.0.1:3456
+...</code></pre>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="tokio-copy">6. tokio::io::copy &mdash; The Heart of Your Proxy</h2>
+  <!-- ================================================================ -->
+
+  <h3>What copy() does internally</h3>
+
+  <p><code>tokio::io::copy(&amp;mut reader, &amp;mut writer)</code> is a loop that reads from one async stream and writes to another:</p>
+
+<pre><code>// Simplified implementation of tokio::io::copy:
+async fn copy(reader: &amp;mut R, writer: &amp;mut W) -&gt; io::Result&lt;u64&gt; {
+    let mut buf = [0u8; 8192];
+    let mut total = 0u64;
+    loop {
+        let n = reader.read(&amp;mut buf).await?;  // suspend until data
+        if n == 0 { break; }                    // EOF — peer closed
+        writer.write_all(&amp;buf[..n]).await?;     // suspend until written
+        total += n as u64;
+    }
+    Ok(total)
+}</code></pre>
+
+  <p>Each <code>.await</code> is a suspension point. While waiting for data from the reader, the thread is free to handle other tasks. When data arrives, the task wakes up, reads it into the buffer, writes it to the writer, and loops.</p>
+
+  <h3>Bidirectional copy for a TCP proxy</h3>
+
+  <p>A TCP proxy needs data flowing in <strong>both directions</strong>: client-to-upstream and upstream-to-client, simultaneously. You achieve this by splitting each stream and copying in both directions concurrently:</p>
+
+<pre><code>let (mut client_read, mut client_write) = client.into_split();
+let (mut upstream_read, mut upstream_write) = upstream.into_split();
+
+// Run both copies at the same time:
+tokio::join!(
+    io::copy(&amp;mut client_read, &amp;mut upstream_write),    // client → upstream
+    io::copy(&amp;mut upstream_read, &amp;mut client_write),    // upstream → client
+);</code></pre>
+
+  <p>Or use the convenience function:</p>
+
+<pre><code>// Does the same thing in one call:
+let (client_to_upstream, upstream_to_client) =
+    io::copy_bidirectional(&amp;mut client, &amp;mut upstream).await?;</code></pre>
+
+  <h3>This IS your TCP proxy</h3>
+
+  <p>Look at this diagram and compare it to your <code>a-tcp-passthrough</code> code. This is all a TCP passthrough proxy does:</p>
+
+<pre class="ascii">  Client                  Proxy                    Upstream
+    │                       │                         │
+    │──── TCP connect ─────►│                         │
+    │                       │──── TCP connect ────────►│
+    │                       │                         │
+    │──── bytes ───────────►│──── bytes ──────────────►│
+    │                       │     (io::copy)          │
+    │◄──── bytes ───────────│◄──── bytes ─────────────│
+    │      (io::copy)       │                         │
+    │                       │                         │
+    │──── close ───────────►│──── close ──────────────►│
+    └───────────────────────┴─────────────────────────┘</code></pre>
+
+  <div class="callout callout-green">
+    <strong>Everything connects</strong>
+    The proxy calls <code>listener.accept().await</code> (Section 5) to get a client socket. It calls <code>TcpStream::connect().await</code> to reach upstream. Then it calls <code>io::copy</code> (this section) in both directions. Each <code>.await</code> suspends the task (Section 2), Pin keeps the future safe (Section 3), and the runtime (Section 4) multiplexes thousands of these proxy sessions on a few threads.
+  </div>
+
+  <h4>Run it</h4>
+<pre class="terminal"><code># Terminal 1 — start a fake upstream:
+$ ncat -l 9090
+
+# Terminal 2 — start the proxy:
+$ cargo run --example 05_tokio_copy
+Proxy listening on 127.0.0.1:3457 → forwarding to 127.0.0.1:9090
+
+# Terminal 3 — connect as a client:
+$ ncat 127.0.0.1 3457
+hello proxy!        ← type here, appears in Terminal 1
+hello back!         ← type in Terminal 1, appears here</code></pre>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="connecting-dots">7. Connecting the Dots</h2>
+  <!-- ================================================================ -->
+
+  <p>Here is how every concept maps to the proxy code:</p>
+
+  <div class="table-wrap">
+    <table>
+      <tr>
+        <th>Concept</th>
+        <th>Where in the proxy</th>
+        <th>Why it matters</th>
+      </tr>
+      <tr>
+        <td><code>Future::poll()</code></td>
+        <td>Every <code>.await</code> call</td>
+        <td>Each await is a suspension point &mdash; the task yields so others can run</td>
+      </tr>
+      <tr>
+        <td><code>Pin</code></td>
+        <td>Inside <code>tokio::spawn</code></td>
+        <td>The future's state machine has self-references; Pin keeps them valid</td>
+      </tr>
+      <tr>
+        <td>Waker</td>
+        <td>I/O driver → socket ready</td>
+        <td>OS tells Tokio "data arrived," Tokio wakes the task to resume polling</td>
+      </tr>
+      <tr>
+        <td><code>tokio::spawn</code></td>
+        <td>One task per connection</td>
+        <td>Thousands of connections on a few threads, not thousands of threads</td>
+      </tr>
+      <tr>
+        <td><code>'static + Send</code></td>
+        <td>The <code>async move { ... }</code> block</td>
+        <td>Spawned task owns its data and may run on any thread</td>
+      </tr>
+      <tr>
+        <td><code>TcpListener::accept</code></td>
+        <td>The main accept loop</td>
+        <td>Non-blocking wait for new connections</td>
+      </tr>
+      <tr>
+        <td><code>io::copy</code></td>
+        <td>The bidirectional data transfer</td>
+        <td>Shuffles bytes between client and upstream without buffering everything</td>
+      </tr>
+    </table>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ================================================================ -->
+  <h2 id="exercises">8. Exercises</h2>
+  <!-- ================================================================ -->
+
+  <p>Work through these after running the examples. They are ordered by difficulty.</p>
+
+  <h3>Futures</h3>
+  <ol>
+    <li>In <code>01_custom_future</code>, change the countdown to 5. Verify you see 6 poll calls (5 Pending + 1 Ready).</li>
+    <li>Comment out <code>cx.waker().wake_by_ref()</code>. Run it and observe the hang. Explain why in your own words.</li>
+    <li>Write a <code>Delay</code> future that returns <code>Ready</code> only after <code>Instant::now()</code> passes a target time. (Hint: store the waker and use <code>std::thread::spawn</code> to call it after a sleep.)</li>
+  </ol>
+
+  <h3>Pin</h3>
+  <ol>
+    <li>Try <code>let mut f = async { tokio::time::sleep(std::time::Duration::from_millis(1)).await; };</code> then <code>Pin::new(&amp;mut f);</code>. Read the compiler error. Why does it say <code>!Unpin</code>?</li>
+    <li>Fix the above using <code>Box::pin()</code> and then using <code>tokio::pin!()</code>. Understand the difference (heap vs. stack).</li>
+  </ol>
+
+  <h3>Runtime</h3>
+  <ol>
+    <li>Spawn 10 tasks that each sleep for a random duration (50&ndash;500ms). Use <code>tokio::task::JoinSet</code> to collect results. Which finishes first?</li>
+    <li>Try holding an <code>Rc</code> across a <code>.await</code> inside a spawned task. Read the compiler error. Fix it with <code>Arc</code>.</li>
+    <li>Replace <code>#[tokio::main]</code> with <code>#[tokio::main(flavor = "current_thread")]</code>. Does the concurrent example still work? Why?</li>
+  </ol>
+
+  <h3>Async I/O</h3>
+  <ol>
+    <li>Modify <code>04_async_io</code> to keep reading in a loop (handle multiple messages per connection, not just one).</li>
+    <li>Add a 5-second timeout: if a client sends nothing for 5 seconds, disconnect them. Use <code>tokio::time::timeout</code>.</li>
+    <li>Log the number of currently active connections using an <code>Arc&lt;AtomicUsize&gt;</code>.</li>
+  </ol>
+
+  <h3>Proxy</h3>
+  <ol>
+    <li>Add a connect timeout to <code>05_tokio_copy</code>: if the upstream doesn't respond within 3 seconds, send an error back to the client.</li>
+    <li>Add a transfer timeout: if no data flows in either direction for 60 seconds, close the connection.</li>
+    <li>Replace the <code>split + join!</code> approach with <code>io::copy_bidirectional()</code>. Compare the code.</li>
+    <li>After completing these, go read your <code>a-tcp-passthrough/src/proxy.rs</code>. You should now understand every line.</li>
+  </ol>
+
+</div>
+
+</body>
+</html>

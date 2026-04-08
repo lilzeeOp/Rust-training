@@ -1,0 +1,67 @@
+[package]
+name = "async-rust-guide"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[[example]]
+name = "00_why_async"
+path = "examples/00_why_async.rs"
+
+[[example]]
+name = "01_async_fn_and_futures"
+path = "examples/01_async_fn_and_futures.rs"
+
+[[example]]
+name = "02_tokio_spawn_tasks"
+path = "examples/02_tokio_spawn_tasks.rs"
+
+[[example]]
+name = "03_how_futures_work"
+path = "examples/03_how_futures_work.rs"
+
+[[example]]
+name = "04_state_machines"
+path = "examples/04_state_machines.rs"
+
+[[example]]
+name = "05_select_and_timeout"
+path = "examples/05_select_and_timeout.rs"
+
+[[example]]
+name = "06_channels"
+path = "examples/06_channels.rs"
+
+[[example]]
+name = "07_common_mistakes"
+path = "examples/07_common_mistakes.rs"
+
+[[example]]
+name = "08_tcp_echo_server"
+path = "examples/08_tcp_echo_server.rs"
+
+[[example]]
+name = "09_full_project"
+path = "examples/09_full_project.rs"
+
+[[example]]
+name = "01_custom_future"
+path = "examples/01_custom_future.rs"
+
+[[example]]
+name = "02_pin_demo"
+path = "examples/02_pin_demo.rs"
+
+[[example]]
+name = "03_tokio_spawn"
+path = "examples/03_tokio_spawn.rs"
+
+[[example]]
+name = "04_async_io"
+path = "examples/04_async_io.rs"
+
+[[example]]
+name = "05_tokio_copy"
+path = "examples/05_tokio_copy.rs"
